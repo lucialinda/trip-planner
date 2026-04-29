@@ -1,0 +1,124 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTripMember(tripId) {
+      return signedIn()
+        && request.auth.uid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids;
+    }
+
+    function isTripMemberAfter(tripId) {
+      return signedIn()
+        && request.auth.uid in getAfter(/databases/$(database)/documents/trips/$(tripId)).data.memberUids;
+    }
+
+    function isJoiningSelf(tripId) {
+      return signedIn()
+        && !(request.auth.uid in resource.data.memberUids)
+        && request.auth.uid in request.resource.data.memberUids
+        && exists(/databases/$(database)/documents/tripCodes/$(resource.data.code))
+        && get(/databases/$(database)/documents/tripCodes/$(resource.data.code)).data.tripId == tripId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberUids'])
+        && request.resource.data.memberUids.size() == resource.data.memberUids.size() + 1
+        && request.resource.data.memberUids.hasAll(resource.data.memberUids)
+        && request.resource.data.members.diff(resource.data.members).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.members[request.auth.uid] is string;
+    }
+
+    function isPlaceAuthor() {
+      return signedIn()
+        && resource.data.addedByUid == request.auth.uid;
+    }
+
+    function isOwnPlaceCreate() {
+      return signedIn()
+        && request.resource.data.addedByUid == request.auth.uid;
+    }
+
+    function isOwnPlaceVote() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes', 'dislikes'])
+        && request.resource.data.likes is map
+        && request.resource.data.dislikes is map
+        && request.resource.data.likes.diff(resource.data.likes).affectedKeys().hasOnly([request.auth.uid])
+        && request.resource.data.dislikes.diff(resource.data.dislikes).affectedKeys().hasOnly([request.auth.uid]);
+    }
+
+    match /userProfiles/{uid} {
+      allow read: if signedIn();
+      allow create, update: if signedIn()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['name', 'photoURL']);
+      allow delete: if false;
+    }
+
+    match /trips/{tripId} {
+      allow read: if signedIn()
+        && request.auth.uid in resource.data.memberUids;
+
+      allow create: if signedIn()
+        && request.auth.uid in request.resource.data.memberUids
+        && request.resource.data.members[request.auth.uid] is string;
+
+      allow update: if signedIn()
+        && (
+          request.auth.uid in resource.data.memberUids
+          || isJoiningSelf(tripId)
+        );
+
+      allow delete: if false;
+
+      match /places/{placeId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId)
+          && isOwnPlaceCreate()
+          && request.resource.data.keys().hasOnly(['name', 'date', 'time', 'note', 'addedBy', 'addedByUid', 'likes', 'dislikes', 'createdAt']);
+        allow update: if isTripMember(tripId)
+          && (
+            (
+              isPlaceAuthor()
+              && request.resource.data.addedByUid == resource.data.addedByUid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'time', 'note'])
+            )
+            || isOwnPlaceVote()
+          );
+        allow delete: if isTripMember(tripId) && isPlaceAuthor();
+      }
+
+      match /votes/{voteId} {
+        allow read, create, update: if isTripMember(tripId);
+        allow delete: if false;
+      }
+
+      match /expenses/{expenseId} {
+        allow read, create, update: if isTripMember(tripId);
+        allow delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow read: if isTripMember(tripId);
+        allow create: if isTripMember(tripId)
+          && request.resource.data.uid == request.auth.uid;
+        allow update, delete: if false;
+      }
+    }
+
+    match /tripCodes/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['tripId', 'createdAt'])
+        && request.resource.data.tripId is string
+        && existsAfter(/databases/$(database)/documents/trips/$(request.resource.data.tripId))
+        && getAfter(/databases/$(database)/documents/trips/$(request.resource.data.tripId)).data.code == code
+        && isTripMemberAfter(request.resource.data.tripId);
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

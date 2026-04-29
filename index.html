@@ -120,10 +120,27 @@
     background: var(--card); border: 1px solid var(--border); border-radius: 10px;
     padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px;
   }
+  .swipe-item { position: relative; overflow: hidden; margin-bottom: 8px; border-radius: 10px; touch-action: pan-y; }
+  .swipe-item .place-card { position: relative; z-index: 1; margin-bottom: 0; transition: transform .18s ease; }
+  .swipe-item.open .place-card { transform: translateX(-128px); }
+  .place-actions {
+    position: absolute; top: 0; right: 0; bottom: 0; display: flex; width: 128px;
+    border-radius: 0 10px 10px 0; overflow: hidden;
+  }
+  .place-action {
+    flex: 1; border: none; color: #fff; font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+  .place-action.edit { background: var(--primary); }
+  .place-action.delete { background: var(--danger); }
   .place-info { flex: 1; min-width: 0; }
   .place-name { font-weight: 600; font-size: 15px; }
   .place-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
   .place-note { font-size: 13px; color: var(--text); margin-top: 4px; }
+  .place-menu-btn {
+    align-self: flex-start; width: 28px; height: 28px; border: none; border-radius: 6px;
+    background: transparent; color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer;
+  }
+  .place-menu-btn:hover { background: var(--bg); }
   .vote-row { display: flex; gap: 8px; margin-top: 8px; }
   .vote-btn {
     display: flex; align-items: center; gap: 4px; padding: 4px 10px;
@@ -457,6 +474,22 @@ async function getUserProfiles(uids) {
   return profiles;
 }
 
+async function ensureTripCode(tripId, trip) {
+  if (!trip?.code) return;
+  try {
+    const codeRef = db.doc(`tripCodes/${trip.code}`);
+    const snap = await codeRef.get();
+    if (!snap.exists) {
+      await codeRef.set({
+        tripId,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    }
+  } catch(e) {
+    console.warn('여행 코드 동기화 실패:', e);
+  }
+}
+
 function formatKRW(n) {
   return '₩' + Number(n).toLocaleString('ko-KR');
 }
@@ -536,6 +569,7 @@ async function loadMyTrips() {
     });
     docs.forEach(doc => {
       const t = doc.data();
+      ensureTripCode(doc.id, t);
       const el = document.createElement('div');
       el.className = 'trip-card';
       el.innerHTML = `<div class="tc-name">${t.name}</div><div class="tc-date">${t.startDate} ~ ${t.endDate} · 멤버 ${Object.keys(t.members || {}).length}명</div>`;
@@ -558,14 +592,22 @@ document.getElementById('create-trip-btn').onclick = async () => {
   try {
     const code = genCode();
     const members = { [currentUser.uid]: currentUser.displayName || '익명' };
-    const doc = await db.collection('trips').add({
+    const tripRef = db.collection('trips').doc();
+    const batch = db.batch();
+    const tripData = {
       name, startDate: start, endDate: end,
       code, members,
       memberUids: [currentUser.uid],
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+    batch.set(tripRef, tripData);
+    batch.set(db.doc(`tripCodes/${code}`), {
+      tripId: tripRef.id,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    await batch.commit();
     toast('여행이 만들어졌어요!');
-    openTrip(doc.id, { name, startDate: start, endDate: end, code, members });
+    openTrip(tripRef.id, tripData);
   } catch(e) { toast('실패: ' + e.message); }
   finally { btn.disabled = false; }
 };
@@ -574,13 +616,14 @@ document.getElementById('join-btn').onclick = async () => {
   const code = document.getElementById('join-code-input').value.trim().toUpperCase();
   if (code.length !== 6) { toast('6자리 코드를 입력해주세요'); return; }
   try {
-    const snap = await db.collection('trips').where('code', '==', code).limit(1).get();
-    if (snap.empty) { toast('코드를 찾을 수 없어요'); return; }
-    const docRef = snap.docs[0];
-    await docRef.ref.update({
+    const codeSnap = await db.doc(`tripCodes/${code}`).get();
+    if (!codeSnap.exists) { toast('코드를 찾을 수 없어요'); return; }
+    const tripRef = db.doc(`trips/${codeSnap.data().tripId}`);
+    await tripRef.update({
       [`members.${currentUser.uid}`]: currentUser.displayName || '익명',
       memberUids: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
     });
+    const docRef = await tripRef.get();
     toast('여행에 참가했어요!');
     openTrip(docRef.id, docRef.data());
   } catch(e) { toast('실패: ' + e.message); }
@@ -658,6 +701,7 @@ async function renderMembersSheet() {
 }
 
 let pendingPhotoFile = null;
+const PROFILE_PHOTO_MAX_BYTES = 1900 * 1024;
 
 function openProfileModal() {
   closeMembersSheet();
@@ -687,14 +731,16 @@ function openProfileModal() {
   document.getElementById('m-photo-input').onchange = e => {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { toast('5MB 이하 이미지만 업로드 가능해요'); return; }
+    if (!file.type.startsWith('image/')) { toast('이미지 파일만 업로드 가능해요'); return; }
     pendingPhotoFile = file;
-    const reader = new FileReader();
-    reader.onload = ev => {
-      const wrap = document.getElementById('m-avatar-wrap');
-      wrap.innerHTML = `<img src="${ev.target.result}" style="width:72px;height:72px;object-fit:cover">`;
-    };
-    reader.readAsDataURL(file);
+    const previewUrl = URL.createObjectURL(file);
+    const wrap = document.getElementById('m-avatar-wrap');
+    const img = document.createElement('img');
+    img.src = previewUrl;
+    img.style.cssText = 'width:72px;height:72px;object-fit:cover';
+    img.onload = () => URL.revokeObjectURL(previewUrl);
+    wrap.innerHTML = '';
+    wrap.appendChild(img);
     document.getElementById('m-upload-status').textContent = '저장 시 업로드됩니다';
   };
 
@@ -707,7 +753,7 @@ function openProfileModal() {
     try {
       if (pendingPhotoFile) await uploadProfilePhoto(pendingPhotoFile);
       if (newName !== currentUser.displayName) await updateDisplayName(newName);
-      else { closeModal(); renderMembersSheet(); }
+      else finishProfileSave();
     } catch(e) {
       toast('저장 실패: ' + e.message);
       btn.disabled = false;
@@ -716,23 +762,51 @@ function openProfileModal() {
   };
 }
 
-function compressImage(file, maxPx = 512, quality = 0.85) {
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('압축 실패')), 'image/jpeg', quality);
+  });
+}
+
+function loadImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
     img.onload = () => {
       URL.revokeObjectURL(url);
-      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
-      const w = Math.round(img.width * scale);
-      const h = Math.round(img.height * scale);
-      const canvas = document.createElement('canvas');
-      canvas.width = w; canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('압축 실패')), 'image/jpeg', quality);
+      resolve(img);
     };
-    img.onerror = reject;
+    img.onerror = () => {
+      URL.revokeObjectURL(url);
+      reject(new Error('이미지를 불러오지 못했어요'));
+    };
     img.src = url;
   });
+}
+
+async function compressImage(file, targetBytes = PROFILE_PHOTO_MAX_BYTES) {
+  const img = await loadImage(file);
+  let maxPx = Math.min(1024, Math.max(img.width, img.height));
+  const qualities = [0.85, 0.75, 0.65, 0.55, 0.45];
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+    const w = Math.max(1, Math.round(img.width * scale));
+    const h = Math.max(1, Math.round(img.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+
+    for (const quality of qualities) {
+      const blob = await canvasToBlob(canvas, quality);
+      if (blob.size < targetBytes) return blob;
+    }
+
+    maxPx = Math.round(maxPx * 0.75);
+  }
+
+  throw new Error('이미지를 2MB 이하로 압축하지 못했어요. 더 작은 이미지를 선택해주세요');
 }
 
 async function uploadProfilePhoto(file) {
@@ -744,7 +818,7 @@ async function uploadProfilePhoto(file) {
   const downloadURL = await snapshot.ref.getDownloadURL();
   await auth.currentUser.updateProfile({ photoURL: downloadURL });
   currentUser = auth.currentUser;
-  await db.doc(`userProfiles/${currentUser.uid}`).update({ photoURL: downloadURL });
+  await db.doc(`userProfiles/${currentUser.uid}`).set({ photoURL: downloadURL }, { merge: true });
 }
 
 async function updateDisplayName(newName) {
@@ -759,9 +833,13 @@ async function updateDisplayName(newName) {
   });
   await batch.commit();
 
-  await db.doc(`userProfiles/${currentUser.uid}`).update({ name: newName });
+  await db.doc(`userProfiles/${currentUser.uid}`).set({ name: newName }, { merge: true });
 
   if (currentTrip) currentTrip.members[currentUser.uid] = newName;
+  finishProfileSave();
+}
+
+function finishProfileSave() {
   closeModal();
   renderMembersSheet();
   toast('프로필이 저장됐어요!');
@@ -828,7 +906,7 @@ function renderItinerary(places) {
     });
     const addBtn = document.createElement('button');
     addBtn.className = 'add-place-btn';
-    addBtn.textContent = '+ 장소 추가';
+    addBtn.textContent = '+ 일정 추가';
     addBtn.onclick = () => openAddPlaceModal(date);
     block.appendChild(addBtn);
     container.appendChild(block);
@@ -841,6 +919,7 @@ function makePlaceCard(p) {
   const dislikes = Object.keys(p.dislikes || {}).length;
   const iLiked = (p.likes || {})[uid];
   const iDisliked = (p.dislikes || {})[uid];
+  const canManage = p.addedByUid === uid;
 
   const card = document.createElement('div');
   card.className = 'place-card';
@@ -853,16 +932,85 @@ function makePlaceCard(p) {
         <button class="vote-btn ${iLiked ? 'liked' : ''}" data-id="${p.id}" data-action="like">👍 ${likes}</button>
         <button class="vote-btn ${iDisliked ? 'disliked' : ''}" data-id="${p.id}" data-action="dislike">👎 ${dislikes}</button>
       </div>
+    </div>
+    ${canManage ? '<button class="place-menu-btn" type="button" title="수정/삭제" aria-label="수정/삭제">⋯</button>' : ''}`;
+  bindPlaceCardActions(card, p);
+
+  if (!canManage) return card;
+
+  const item = document.createElement('div');
+  item.className = 'swipe-item';
+  item.innerHTML = `
+    <div class="place-actions">
+      <button class="place-action edit" type="button">수정</button>
+      <button class="place-action delete" type="button">삭제</button>
     </div>`;
+  item.appendChild(card);
+  bindSwipeActions(item);
+  item.querySelector('.place-action.edit').onclick = () => openEditPlaceModal(p);
+  item.querySelector('.place-action.delete').onclick = () => deletePlace(p.id);
+  card.querySelector('.place-menu-btn').onclick = () => toggleSwipeItem(item);
+  return item;
+}
+
+function bindPlaceCardActions(card, p) {
   card.querySelectorAll('.vote-btn').forEach(btn => {
     btn.onclick = () => votePlace(p.id, btn.dataset.action);
   });
-  return card;
+}
+
+function toggleSwipeItem(item, forceOpen) {
+  document.querySelectorAll('.swipe-item.open').forEach(openItem => {
+    if (openItem !== item) openItem.classList.remove('open');
+  });
+  item.classList.toggle('open', forceOpen ?? !item.classList.contains('open'));
+}
+
+function bindSwipeActions(item) {
+  const content = item.querySelector('.place-card');
+  let startX = 0, startY = 0, deltaX = 0, dragging = false, horizontal = false;
+
+  content.addEventListener('pointerdown', e => {
+    if (e.target.closest('button')) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    deltaX = item.classList.contains('open') ? -128 : 0;
+    dragging = true;
+    horizontal = false;
+    content.setPointerCapture(e.pointerId);
+  });
+
+  content.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const moveX = e.clientX - startX;
+    const moveY = e.clientY - startY;
+    if (!horizontal && Math.abs(moveY) > Math.abs(moveX)) return;
+    horizontal = true;
+    const base = item.classList.contains('open') ? -128 : 0;
+    deltaX = Math.max(-128, Math.min(0, base + moveX));
+    content.style.transform = `translateX(${deltaX}px)`;
+  });
+
+  content.addEventListener('pointerup', () => {
+    if (!dragging) return;
+    dragging = false;
+    content.style.transform = '';
+    toggleSwipeItem(item, deltaX < -64);
+  });
+
+  content.addEventListener('pointercancel', () => {
+    dragging = false;
+    content.style.transform = '';
+  });
 }
 
 function esc(str) {
   if (!str) return '';
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function escAttr(str) {
+  return esc(str).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 async function votePlace(placeId, action) {
@@ -885,28 +1033,53 @@ async function votePlace(placeId, action) {
 }
 
 function openAddPlaceModal(date) {
+  openPlaceModal(date);
+}
+
+function openEditPlaceModal(place) {
+  openPlaceModal(place.date, place);
+}
+
+function openPlaceModal(date, place = null) {
+  const editing = Boolean(place);
   openModal(`
-    <h3>장소 추가 · ${dateLabel(date)}</h3>
-    <div class="form-group"><label>장소 이름 *</label><input id="m-place-name" type="text" placeholder="예: 도톤보리"></div>
-    <div class="form-group"><label>시간 (선택)</label><input id="m-place-time" type="time"></div>
-    <div class="form-group"><label>메모 (선택)</label><textarea id="m-place-note" rows="2" placeholder="간단한 메모"></textarea></div>
-    <button class="btn btn-primary" id="m-save-place">추가하기</button>
+    <h3>${editing ? '일정 수정' : '일정 추가'} · ${dateLabel(date)}</h3>
+    <div class="form-group"><label>일정 이름 *</label><input id="m-place-name" type="text" value="${escAttr(place?.name || '')}" placeholder="예: 도톤보리"></div>
+    <div class="form-group"><label>시간 (선택)</label><input id="m-place-time" type="time" value="${escAttr(place?.time || '')}"></div>
+    <div class="form-group"><label>메모 (선택)</label><textarea id="m-place-note" rows="2" placeholder="간단한 메모">${esc(place?.note || '')}</textarea></div>
+    <button class="btn btn-primary" id="m-save-place">${editing ? '수정하기' : '추가하기'}</button>
   `);
   document.getElementById('m-save-place').onclick = async () => {
     const name = document.getElementById('m-place-name').value.trim();
-    if (!name) { toast('장소 이름을 입력해주세요'); return; }
+    if (!name) { toast('일정 이름을 입력해주세요'); return; }
     const time = document.getElementById('m-place-time').value;
     const note = document.getElementById('m-place-note').value.trim();
     try {
-      await db.collection(`trips/${currentTripId}/places`).add({
-        name, date, time, note,
-        addedBy: currentUser.displayName || '익명',
-        likes: {}, dislikes: {},
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+      if (editing) {
+        await db.doc(`trips/${currentTripId}/places/${place.id}`).update({ name, time, note });
+        toast('일정이 수정됐어요');
+      } else {
+        await db.collection(`trips/${currentTripId}/places`).add({
+          name, date, time, note,
+          addedBy: currentUser.displayName || '익명',
+          addedByUid: currentUser.uid,
+          likes: {}, dislikes: {},
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      }
       closeModal();
     } catch(e) { toast('실패: ' + e.message); }
   };
+}
+
+async function deletePlace(placeId) {
+  if (!confirm('이 일정을 삭제할까요?')) return;
+  try {
+    await db.doc(`trips/${currentTripId}/places/${placeId}`).delete();
+    toast('일정이 삭제됐어요');
+  } catch(e) {
+    toast('삭제 실패: ' + e.message);
+  }
 }
 
 // ── Votes ──
