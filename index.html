@@ -1,0 +1,1181 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>여행 플래너</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #4f7eff;
+    --primary-dark: #3a66e0;
+    --bg: #f5f6fa;
+    --card: #fff;
+    --border: #e2e5ed;
+    --text: #1a1d2e;
+    --muted: #8a91a8;
+    --danger: #ff4f4f;
+    --success: #2ecc71;
+    --tab-h: 56px;
+    --header-h: 56px;
+  }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  /* ── Auth screen ── */
+  #auth-screen {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 100vh; padding: 24px; gap: 24px;
+  }
+  #auth-screen h1 { font-size: 28px; font-weight: 700; }
+  #auth-screen p { color: var(--muted); font-size: 15px; }
+  .btn-google {
+    display: flex; align-items: center; gap: 10px; padding: 12px 24px;
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 15px; font-weight: 600; cursor: pointer; transition: background .15s;
+  }
+  .btn-google:hover { background: #f0f2f9; }
+  .btn-google img { width: 20px; height: 20px; }
+
+  /* ── Trip select screen ── */
+  #trip-screen { display: none; max-width: 480px; margin: 0 auto; padding: 24px 16px; }
+  #trip-screen h2 { font-size: 20px; font-weight: 700; margin-bottom: 16px; }
+  .trip-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px; }
+  .trip-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; cursor: pointer; transition: border-color .15s;
+  }
+  .trip-card:hover { border-color: var(--primary); }
+  .trip-card .tc-name { font-weight: 600; font-size: 16px; }
+  .trip-card .tc-date { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .divider { text-align: center; color: var(--muted); font-size: 13px; margin: 16px 0; position: relative; }
+  .divider::before, .divider::after {
+    content: ''; position: absolute; top: 50%; width: 42%; height: 1px; background: var(--border);
+  }
+  .divider::before { left: 0; } .divider::after { right: 0; }
+
+  /* ── Create trip form ── */
+  .form-group { margin-bottom: 14px; }
+  .form-group label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 6px; color: var(--muted); }
+  .form-group input, .form-group select, .form-group textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 8px; font-size: 15px; outline: none; transition: border-color .15s;
+  }
+  .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    padding: 11px 20px; border-radius: 8px; font-size: 15px; font-weight: 600;
+    cursor: pointer; border: none; transition: background .15s, opacity .15s;
+  }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); color: #fff; width: 100%; }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-dark); }
+  .btn-outline { background: transparent; color: var(--primary); border: 1px solid var(--primary); }
+  .btn-outline:hover { background: #eef1ff; }
+  .btn-sm { padding: 7px 14px; font-size: 13px; }
+  .btn-danger { background: var(--danger); color: #fff; }
+
+  /* ── Join by code ── */
+  .join-row { display: flex; gap: 8px; }
+  .join-row input { flex: 1; }
+
+  /* ── App shell ── */
+  #app { display: none; height: 100vh; display: none; flex-direction: column; }
+  #app.active { display: flex; }
+
+  /* Header */
+  #app-header {
+    height: var(--header-h); background: var(--card); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; padding: 0 16px; gap: 12px; flex-shrink: 0; position: sticky; top: 0; z-index: 10;
+  }
+  #trip-title { font-size: 17px; font-weight: 700; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #trip-dates { font-size: 12px; color: var(--muted); }
+  .icon-btn { background: none; border: none; cursor: pointer; padding: 6px; border-radius: 6px; display: flex; align-items: center; }
+  .icon-btn:hover { background: var(--bg); }
+  .icon-btn svg { width: 20px; height: 20px; stroke: var(--muted); }
+
+  /* Tab nav */
+  #tab-nav {
+    display: flex; border-bottom: 1px solid var(--border); background: var(--card);
+    flex-shrink: 0; position: sticky; top: var(--header-h); z-index: 9;
+  }
+  .tab-btn {
+    flex: 1; padding: 14px 4px; font-size: 13px; font-weight: 600; color: var(--muted);
+    background: none; border: none; cursor: pointer; border-bottom: 2px solid transparent;
+    transition: color .15s, border-color .15s;
+  }
+  .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  /* Tab content */
+  #tab-content { flex: 1; overflow-y: auto; padding: 16px; }
+  .tab-panel { display: none; max-width: 600px; margin: 0 auto; }
+  .tab-panel.active { display: block; }
+
+  /* ── Itinerary tab ── */
+  .day-block { margin-bottom: 24px; }
+  .day-header {
+    font-size: 14px; font-weight: 700; color: var(--primary);
+    margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;
+  }
+  .place-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px;
+  }
+  .place-info { flex: 1; min-width: 0; }
+  .place-name { font-weight: 600; font-size: 15px; }
+  .place-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .place-note { font-size: 13px; color: var(--text); margin-top: 4px; }
+  .vote-row { display: flex; gap: 8px; margin-top: 8px; }
+  .vote-btn {
+    display: flex; align-items: center; gap: 4px; padding: 4px 10px;
+    border-radius: 20px; font-size: 13px; border: 1px solid var(--border);
+    background: none; cursor: pointer; transition: background .15s;
+  }
+  .vote-btn.liked { background: #fff0f0; border-color: #ffb3b3; color: #e53935; }
+  .vote-btn.disliked { background: #eef1ff; border-color: #b3bfff; color: var(--primary); }
+  .add-place-btn {
+    width: 100%; padding: 10px; border: 1px dashed var(--border); border-radius: 10px;
+    background: none; cursor: pointer; font-size: 14px; color: var(--muted);
+    transition: border-color .15s, color .15s;
+  }
+  .add-place-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* ── Votes tab ── */
+  .vote-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 12px; }
+  .vote-card-title { font-weight: 700; font-size: 15px; margin-bottom: 10px; }
+  .vote-option {
+    display: flex; align-items: center; gap: 10px; padding: 8px 0;
+    border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .vote-option:last-child { border-bottom: none; }
+  .vote-option-text { flex: 1; font-size: 14px; }
+  .vote-bar-wrap { flex: 1; position: relative; height: 6px; background: var(--bg); border-radius: 3px; }
+  .vote-bar { height: 100%; border-radius: 3px; background: var(--primary); transition: width .3s; }
+  .vote-count { font-size: 13px; color: var(--muted); min-width: 20px; text-align: right; }
+  .vote-my-mark { width: 8px; height: 8px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+  .vote-status { font-size: 12px; color: var(--muted); margin-top: 8px; display: flex; justify-content: space-between; align-items: center; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+  .badge-active { background: #e6f4ea; color: #2e7d32; }
+  .badge-closed { background: #f5f5f5; color: #888; }
+
+  /* ── Budget tab ── */
+  .budget-summary { background: var(--primary); color: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .budget-summary .total { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .budget-summary .per-person { font-size: 14px; opacity: .85; margin-top: 6px; }
+  .expense-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: center; gap: 12px; }
+  .expense-info { flex: 1; }
+  .expense-desc { font-weight: 600; font-size: 15px; }
+  .expense-by { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .expense-amount { font-weight: 700; font-size: 16px; color: var(--primary); }
+  .settlement-table { background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; margin-top: 16px; }
+  .settlement-table table { width: 100%; border-collapse: collapse; }
+  .settlement-table th, .settlement-table td { padding: 10px 14px; font-size: 13px; border-bottom: 1px solid var(--border); text-align: left; }
+  .settlement-table th { background: var(--bg); font-weight: 600; color: var(--muted); }
+  .settlement-table tr:last-child td { border-bottom: none; }
+
+  /* ── Chat tab ── */
+  #chat-panel { display: none; flex-direction: column; }
+  #chat-panel.active { display: flex; }
+  #messages {
+    flex: 1; overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column; gap: 8px;
+    min-height: 0; max-height: calc(100vh - var(--header-h) - 46px - 56px - 48px);
+  }
+  .msg { display: flex; gap: 8px; align-items: flex-end; }
+  .msg.mine { flex-direction: row-reverse; }
+  .msg-avatar {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--primary);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 700; flex-shrink: 0; overflow: hidden;
+  }
+  .msg-avatar img { width: 32px; height: 32px; object-fit: cover; display: block; }
+  .msg-body { max-width: 70%; }
+  .msg-name { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+  .mine .msg-name { text-align: right; }
+  .msg-bubble {
+    padding: 9px 13px; border-radius: 16px; font-size: 14px; line-height: 1.4;
+    background: var(--card); border: 1px solid var(--border); word-break: break-word;
+  }
+  .mine .msg-bubble { background: var(--primary); color: #fff; border: none; }
+  .msg-time { font-size: 10px; color: var(--muted); margin-top: 2px; }
+  .mine .msg-time { text-align: right; }
+  #chat-input-row {
+    display: flex; gap: 8px; padding: 8px 0 4px; border-top: 1px solid var(--border); margin-top: 8px;
+  }
+  #chat-input-row input {
+    flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 24px;
+    font-size: 14px; outline: none;
+  }
+  #chat-input-row input:focus { border-color: var(--primary); }
+  #send-btn {
+    padding: 10px 16px; background: var(--primary); color: #fff; border: none;
+    border-radius: 24px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  #send-btn:hover { background: var(--primary-dark); }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: var(--card); border-radius: 16px 16px 0 0; padding: 20px 20px 32px;
+    width: 100%; max-width: 480px; max-height: 85vh; overflow-y: auto;
+  }
+  .modal h3 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+
+  /* Members sheet */
+  .member-chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    background: var(--bg); border-radius: 20px; font-size: 13px; margin: 4px;
+  }
+  .icon-btn-sm {
+    background: none; border: none; cursor: pointer; font-size: 14px;
+    padding: 2px 4px; border-radius: 4px; line-height: 1;
+  }
+  .icon-btn-sm:hover { background: var(--border); }
+
+  /* Toast */
+  #toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(10px);
+    background: #1a1d2e; color: #fff; padding: 10px 18px; border-radius: 8px;
+    font-size: 14px; opacity: 0; transition: opacity .2s, transform .2s; pointer-events: none; z-index: 200;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* Empty state */
+  .empty { text-align: center; padding: 40px 16px; color: var(--muted); font-size: 14px; }
+  .empty-icon { font-size: 40px; margin-bottom: 12px; }
+
+  /* Loading */
+  .spinner { width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--primary); border-radius: 50%; animation: spin .7s linear infinite; margin: 40px auto; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+
+<!-- Auth Screen -->
+<div id="auth-screen">
+  <div style="font-size:48px">✈️</div>
+  <h1>여행 플래너</h1>
+  <p>친구들과 함께 여행 일정을 만들어보세요</p>
+  <button class="btn-google" id="google-login-btn">
+    <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google">
+    Google로 로그인
+  </button>
+</div>
+
+<!-- Trip Select Screen -->
+<div id="trip-screen">
+  <h2>내 여행</h2>
+  <div class="trip-list" id="trip-list">
+    <div class="spinner"></div>
+  </div>
+  <div class="divider">또는</div>
+  <div style="margin-bottom:20px">
+    <div class="form-group"><label>여행 코드로 참가</label></div>
+    <div class="join-row">
+      <input type="text" id="join-code-input" placeholder="여행 코드 입력 (6자리)" maxlength="6" style="text-transform:uppercase">
+      <button class="btn btn-outline" id="join-btn">참가</button>
+    </div>
+  </div>
+  <div class="divider">새 여행</div>
+  <div class="form-group"><label>여행 이름</label><input type="text" id="new-trip-name" placeholder="예: 오사카 4박5일"></div>
+  <div class="form-group"><label>출발일</label><input type="date" id="new-trip-start"></div>
+  <div class="form-group"><label>귀국일</label><input type="date" id="new-trip-end"></div>
+  <button class="btn btn-primary" id="create-trip-btn">여행 만들기</button>
+</div>
+
+<!-- App Shell -->
+<div id="app">
+  <div id="app-header">
+    <button class="icon-btn" id="back-btn" title="여행 목록">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div style="flex:1; min-width:0;">
+      <div id="trip-title">로딩중...</div>
+      <div id="trip-dates"></div>
+    </div>
+    <button class="icon-btn" id="share-btn" title="여행 코드 공유">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+    </button>
+    <button class="icon-btn" id="members-btn" title="멤버">
+      <svg viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+    </button>
+  </div>
+
+  <nav id="tab-nav">
+    <button class="tab-btn active" data-tab="itinerary">📅 일정</button>
+    <button class="tab-btn" data-tab="votes">🗳️ 투표</button>
+    <button class="tab-btn" data-tab="budget">💰 예산</button>
+    <button class="tab-btn" data-tab="chat">💬 채팅</button>
+  </nav>
+
+  <div id="tab-content">
+    <!-- Itinerary -->
+    <div class="tab-panel active" id="panel-itinerary">
+      <div id="itinerary-days"></div>
+    </div>
+
+    <!-- Votes -->
+    <div class="tab-panel" id="panel-votes">
+      <button class="btn btn-primary" id="create-vote-btn" style="margin-bottom:16px">+ 새 투표 만들기</button>
+      <div id="votes-list"></div>
+    </div>
+
+    <!-- Budget -->
+    <div class="tab-panel" id="panel-budget">
+      <div class="budget-summary">
+        <div style="font-size:13px;opacity:.85">총 지출</div>
+        <div class="total" id="budget-total">₩0</div>
+        <div class="per-person" id="budget-per-person"></div>
+      </div>
+      <button class="btn btn-primary" id="add-expense-btn" style="margin-bottom:16px">+ 지출 추가</button>
+      <div id="expense-list"></div>
+      <div class="settlement-table" id="settlement-section" style="display:none">
+        <table>
+          <thead><tr><th>멤버</th><th>낸 금액</th><th>정산액</th><th>상태</th></tr></thead>
+          <tbody id="settlement-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Chat -->
+    <div class="tab-panel" id="panel-chat" style="display:none">
+      <div id="messages"></div>
+      <div id="chat-input-row">
+        <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." maxlength="500">
+        <button id="send-btn">전송</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modals -->
+<div class="modal-overlay hidden" id="modal-overlay">
+  <div class="modal" id="modal-content"></div>
+</div>
+
+<!-- Members Sheet -->
+<div class="modal-overlay hidden" id="members-overlay">
+  <div class="modal">
+    <h3>여행 멤버</h3>
+    <div id="members-list"></div>
+    <button class="btn btn-outline" style="margin-top:16px;width:100%" onclick="closeMembersSheet()">닫기</button>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<!-- Firebase SDK -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+
+<script>
+// ── Firebase init ──
+const firebaseConfig = {
+  apiKey: "AIzaSyBKqpyrKECFR3GhYtnbz0xe-FlrQ-0bkeA",
+  authDomain: "trip-planner-2026-ec5ec.firebaseapp.com",
+  projectId: "trip-planner-2026-ec5ec",
+  storageBucket: "trip-planner-2026-ec5ec.firebasestorage.app",
+  messagingSenderId: "916488885189",
+  appId: "1:916488885189:web:d0ae67cf9a56c52f2e71ac"
+};
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+// ── State ──
+let currentUser = null;
+let currentTrip = null;
+let currentTripId = null;
+let unsubscribers = [];
+let activeTab = 'itinerary';
+
+// ── Util ──
+function toast(msg, dur = 2500) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  setTimeout(() => el.classList.remove('show'), dur);
+}
+
+function fmt(date) {
+  if (!date) return '';
+  const d = date.toDate ? date.toDate() : new Date(date);
+  return d.toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', weekday: 'short' });
+}
+
+function fmtTime(date) {
+  if (!date) return '';
+  const d = date.toDate ? date.toDate() : new Date(date);
+  return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function genCode() {
+  return Math.random().toString(36).substring(2, 8).toUpperCase();
+}
+
+function initials(name) {
+  if (!name) return '?';
+  return name.trim().charAt(0).toUpperCase();
+}
+
+function avatarEl(name, photoURL, size = 32) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:var(--primary);color:#fff;display:flex;align-items:center;justify-content:center;font-size:${Math.round(size*0.4)}px;font-weight:700;flex-shrink:0;overflow:hidden`;
+  if (photoURL) {
+    const img = document.createElement('img');
+    img.src = photoURL;
+    img.style.cssText = `width:${size}px;height:${size}px;object-fit:cover;display:block`;
+    img.alt = name;
+    img.onerror = () => { img.remove(); wrap.textContent = initials(name); };
+    wrap.appendChild(img);
+  } else {
+    wrap.textContent = initials(name);
+  }
+  return wrap;
+}
+
+async function upsertUserProfile(user) {
+  if (!user) return;
+  await db.doc(`userProfiles/${user.uid}`).set({
+    name: user.displayName || '익명',
+    photoURL: user.photoURL || null
+  }, { merge: true });
+}
+
+async function getUserProfiles(uids) {
+  const profiles = {};
+  await Promise.all(uids.map(async uid => {
+    const snap = await db.doc(`userProfiles/${uid}`).get();
+    profiles[uid] = snap.exists ? snap.data() : { name: '멤버', photoURL: null };
+  }));
+  return profiles;
+}
+
+function formatKRW(n) {
+  return '₩' + Number(n).toLocaleString('ko-KR');
+}
+
+function dateRange(start, end) {
+  const dates = [];
+  const s = new Date(start), e = new Date(end);
+  for (let d = new Date(s); d <= e; d.setDate(d.getDate() + 1)) {
+    dates.push(new Date(d).toISOString().split('T')[0]);
+  }
+  return dates;
+}
+
+function dateLabel(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+}
+
+// ── Modal helpers ──
+function openModal(html) {
+  document.getElementById('modal-content').innerHTML = html;
+  document.getElementById('modal-overlay').classList.remove('hidden');
+}
+function closeModal() {
+  document.getElementById('modal-overlay').classList.add('hidden');
+}
+function closeMembersSheet() {
+  document.getElementById('members-overlay').classList.add('hidden');
+}
+document.getElementById('modal-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('modal-overlay')) closeModal();
+});
+document.getElementById('members-overlay').addEventListener('click', e => {
+  if (e.target === document.getElementById('members-overlay')) closeMembersSheet();
+});
+
+// ── Auth ──
+auth.onAuthStateChanged(user => {
+  currentUser = user;
+  if (user) {
+    upsertUserProfile(user);
+    document.getElementById('auth-screen').style.display = 'none';
+    showTripScreen();
+  } else {
+    document.getElementById('auth-screen').style.display = 'flex';
+    document.getElementById('trip-screen').style.display = 'none';
+    document.getElementById('app').classList.remove('active');
+  }
+});
+
+document.getElementById('google-login-btn').onclick = () => {
+  auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(e => toast('로그인 실패: ' + e.message));
+};
+
+// ── Trip screen ──
+function showTripScreen() {
+  document.getElementById('trip-screen').style.display = 'block';
+  document.getElementById('app').classList.remove('active');
+  loadMyTrips();
+}
+
+async function loadMyTrips() {
+  const listEl = document.getElementById('trip-list');
+  listEl.innerHTML = '<div class="spinner"></div>';
+  try {
+    const snap = await db.collection('trips')
+      .where('memberUids', 'array-contains', currentUser.uid).get();
+    if (snap.empty) {
+      listEl.innerHTML = '<div class="empty">아직 참가한 여행이 없어요</div>';
+      return;
+    }
+    listEl.innerHTML = '';
+    const docs = snap.docs.sort((a, b) => {
+      const ta = a.data().createdAt?.toMillis?.() || 0;
+      const tb = b.data().createdAt?.toMillis?.() || 0;
+      return tb - ta;
+    });
+    docs.forEach(doc => {
+      const t = doc.data();
+      const el = document.createElement('div');
+      el.className = 'trip-card';
+      el.innerHTML = `<div class="tc-name">${t.name}</div><div class="tc-date">${t.startDate} ~ ${t.endDate} · 멤버 ${Object.keys(t.members || {}).length}명</div>`;
+      el.onclick = () => openTrip(doc.id, t);
+      listEl.appendChild(el);
+    });
+  } catch(e) {
+    listEl.innerHTML = '<div class="empty">불러오기 실패: ' + e.message + '</div>';
+  }
+}
+
+document.getElementById('create-trip-btn').onclick = async () => {
+  const name = document.getElementById('new-trip-name').value.trim();
+  const start = document.getElementById('new-trip-start').value;
+  const end = document.getElementById('new-trip-end').value;
+  if (!name || !start || !end) { toast('여행 이름과 날짜를 입력해주세요'); return; }
+  if (start > end) { toast('귀국일이 출발일보다 빠를 수 없어요'); return; }
+  const btn = document.getElementById('create-trip-btn');
+  btn.disabled = true;
+  try {
+    const code = genCode();
+    const members = { [currentUser.uid]: currentUser.displayName || '익명' };
+    const doc = await db.collection('trips').add({
+      name, startDate: start, endDate: end,
+      code, members,
+      memberUids: [currentUser.uid],
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    toast('여행이 만들어졌어요!');
+    openTrip(doc.id, { name, startDate: start, endDate: end, code, members });
+  } catch(e) { toast('실패: ' + e.message); }
+  finally { btn.disabled = false; }
+};
+
+document.getElementById('join-btn').onclick = async () => {
+  const code = document.getElementById('join-code-input').value.trim().toUpperCase();
+  if (code.length !== 6) { toast('6자리 코드를 입력해주세요'); return; }
+  try {
+    const snap = await db.collection('trips').where('code', '==', code).limit(1).get();
+    if (snap.empty) { toast('코드를 찾을 수 없어요'); return; }
+    const docRef = snap.docs[0];
+    await docRef.ref.update({
+      [`members.${currentUser.uid}`]: currentUser.displayName || '익명',
+      memberUids: firebase.firestore.FieldValue.arrayUnion(currentUser.uid)
+    });
+    toast('여행에 참가했어요!');
+    openTrip(docRef.id, docRef.data());
+  } catch(e) { toast('실패: ' + e.message); }
+};
+
+// ── Open trip ──
+function openTrip(id, data) {
+  currentTripId = id;
+  currentTrip = data;
+  unsubscribers.forEach(u => u());
+  unsubscribers = [];
+
+  document.getElementById('trip-screen').style.display = 'none';
+  document.getElementById('app').classList.add('active');
+  document.getElementById('trip-title').textContent = data.name;
+  document.getElementById('trip-dates').textContent = `${data.startDate} ~ ${data.endDate}`;
+
+  switchTab('itinerary');
+}
+
+document.getElementById('back-btn').onclick = () => {
+  unsubscribers.forEach(u => u());
+  unsubscribers = [];
+  currentTripId = null;
+  currentTrip = null;
+  showTripScreen();
+};
+
+document.getElementById('share-btn').onclick = () => {
+  const code = currentTrip?.code || '';
+  if (navigator.share) {
+    navigator.share({ title: currentTrip.name, text: `여행 코드: ${code}` });
+  } else {
+    navigator.clipboard.writeText(code).then(() => toast(`코드 복사됨: ${code}`));
+  }
+};
+
+document.getElementById('members-btn').onclick = () => {
+  document.getElementById('members-overlay').classList.remove('hidden');
+  renderMembersSheet();
+};
+
+async function renderMembersSheet() {
+  const members = currentTrip?.members || {};
+  const listEl = document.getElementById('members-list');
+  listEl.innerHTML = '<div class="spinner" style="margin:16px auto"></div>';
+
+  const uids = Object.keys(members);
+  const profiles = await getUserProfiles(uids);
+
+  listEl.innerHTML = '';
+  uids.forEach(uid => {
+    const name = members[uid];
+    const profile = profiles[uid] || {};
+    const photoURL = profile.photoURL || null;
+    const isMe = uid === currentUser.uid;
+
+    const chip = document.createElement('div');
+    chip.className = 'member-chip';
+    chip.appendChild(avatarEl(name, photoURL, 24));
+
+    const label = document.createElement('span');
+    label.textContent = name + (isMe ? ' (나)' : '');
+    chip.appendChild(label);
+
+    if (isMe) {
+      const editBtn = document.createElement('button');
+      editBtn.className = 'icon-btn-sm';
+      editBtn.textContent = '✏️';
+      editBtn.onclick = openProfileModal;
+      chip.appendChild(editBtn);
+    }
+    listEl.appendChild(chip);
+  });
+}
+
+let pendingPhotoFile = null;
+
+function openProfileModal() {
+  closeMembersSheet();
+  pendingPhotoFile = null;
+  const name = currentUser.displayName || '';
+  const photo = currentUser.photoURL || null;
+
+  openModal(`
+    <h3>프로필 편집</h3>
+    <div style="display:flex;flex-direction:column;align-items:center;margin-bottom:20px;gap:10px">
+      <div id="m-avatar-wrap" style="width:72px;height:72px;border-radius:50%;overflow:hidden;background:var(--primary);display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:700;color:#fff">
+        ${photo ? `<img src="${esc(photo)}" style="width:72px;height:72px;object-fit:cover" id="m-avatar-img">` : initials(name)}
+      </div>
+      <label class="btn btn-outline btn-sm" style="cursor:pointer">
+        📷 사진 변경
+        <input type="file" id="m-photo-input" accept="image/*" style="display:none">
+      </label>
+      <div id="m-upload-status" style="font-size:12px;color:var(--muted);min-height:16px"></div>
+    </div>
+    <div class="form-group">
+      <label>닉네임</label>
+      <input id="m-nickname" type="text" value="${esc(name)}" maxlength="20" placeholder="닉네임 입력">
+    </div>
+    <button class="btn btn-primary" id="m-save-profile">저장하기</button>
+  `);
+
+  document.getElementById('m-photo-input').onchange = e => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('5MB 이하 이미지만 업로드 가능해요'); return; }
+    pendingPhotoFile = file;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      const wrap = document.getElementById('m-avatar-wrap');
+      wrap.innerHTML = `<img src="${ev.target.result}" style="width:72px;height:72px;object-fit:cover">`;
+    };
+    reader.readAsDataURL(file);
+    document.getElementById('m-upload-status').textContent = '저장 시 업로드됩니다';
+  };
+
+  document.getElementById('m-save-profile').onclick = async () => {
+    const newName = document.getElementById('m-nickname').value.trim();
+    if (!newName) { toast('닉네임을 입력해주세요'); return; }
+    const btn = document.getElementById('m-save-profile');
+    btn.disabled = true;
+    btn.textContent = '저장 중...';
+    try {
+      if (pendingPhotoFile) await uploadProfilePhoto(pendingPhotoFile);
+      if (newName !== currentUser.displayName) await updateDisplayName(newName);
+      else { closeModal(); renderMembersSheet(); }
+    } catch(e) {
+      toast('저장 실패: ' + e.message);
+      btn.disabled = false;
+      btn.textContent = '저장하기';
+    }
+  };
+}
+
+function compressImage(file, maxPx = 512, quality = 0.85) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const w = Math.round(img.width * scale);
+      const h = Math.round(img.height * scale);
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('압축 실패')), 'image/jpeg', quality);
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+async function uploadProfilePhoto(file) {
+  document.getElementById('m-upload-status').textContent = '압축 중...';
+  const compressed = await compressImage(file);
+  document.getElementById('m-upload-status').textContent = '업로드 중...';
+  const ref = storage.ref(`profile-photos/${currentUser.uid}/avatar`);
+  const snapshot = await ref.put(compressed, { contentType: 'image/jpeg' });
+  const downloadURL = await snapshot.ref.getDownloadURL();
+  await auth.currentUser.updateProfile({ photoURL: downloadURL });
+  currentUser = auth.currentUser;
+  await db.doc(`userProfiles/${currentUser.uid}`).update({ photoURL: downloadURL });
+}
+
+async function updateDisplayName(newName) {
+  await auth.currentUser.updateProfile({ displayName: newName });
+  currentUser = auth.currentUser;
+
+  const snap = await db.collection('trips')
+    .where('memberUids', 'array-contains', currentUser.uid).get();
+  const batch = db.batch();
+  snap.forEach(doc => {
+    batch.update(doc.ref, { [`members.${currentUser.uid}`]: newName });
+  });
+  await batch.commit();
+
+  await db.doc(`userProfiles/${currentUser.uid}`).update({ name: newName });
+
+  if (currentTrip) currentTrip.members[currentUser.uid] = newName;
+  closeModal();
+  renderMembersSheet();
+  toast('프로필이 저장됐어요!');
+}
+
+// ── Tabs ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.onclick = () => switchTab(btn.dataset.tab);
+});
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.tab-panel').forEach(p => {
+    p.classList.remove('active');
+    p.style.display = '';
+  });
+  const panel = document.getElementById('panel-' + tab);
+  panel.classList.add('active');
+
+  // Chat needs flex
+  if (tab === 'chat') {
+    panel.style.display = 'flex';
+    panel.style.flexDirection = 'column';
+    loadChat();
+  } else if (tab === 'itinerary') {
+    loadItinerary();
+  } else if (tab === 'votes') {
+    loadVotes();
+  } else if (tab === 'budget') {
+    loadBudget();
+  }
+}
+
+// ── Itinerary ──
+function loadItinerary() {
+  const container = document.getElementById('itinerary-days');
+  container.innerHTML = '<div class="spinner"></div>';
+  const unsub = db.collection(`trips/${currentTripId}/places`)
+    .orderBy('createdAt').onSnapshot(snap => {
+      const places = {};
+      snap.forEach(doc => {
+        const p = { id: doc.id, ...doc.data() };
+        if (!places[p.date]) places[p.date] = [];
+        places[p.date].push(p);
+      });
+      renderItinerary(places);
+    }, e => { container.innerHTML = '<div class="empty">오류: ' + e.message + '</div>'; });
+  unsubscribers.push(unsub);
+}
+
+function renderItinerary(places) {
+  const container = document.getElementById('itinerary-days');
+  const dates = dateRange(currentTrip.startDate, currentTrip.endDate);
+  if (!dates.length) { container.innerHTML = '<div class="empty">날짜 정보가 없어요</div>'; return; }
+  container.innerHTML = '';
+  dates.forEach((date, i) => {
+    const dayPlaces = places[date] || [];
+    const block = document.createElement('div');
+    block.className = 'day-block';
+    block.innerHTML = `<div class="day-header"><span>Day ${i + 1} · ${dateLabel(date)}</span></div>`;
+    dayPlaces.forEach(p => {
+      block.appendChild(makePlaceCard(p));
+    });
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-place-btn';
+    addBtn.textContent = '+ 장소 추가';
+    addBtn.onclick = () => openAddPlaceModal(date);
+    block.appendChild(addBtn);
+    container.appendChild(block);
+  });
+}
+
+function makePlaceCard(p) {
+  const uid = currentUser.uid;
+  const likes = Object.keys(p.likes || {}).length;
+  const dislikes = Object.keys(p.dislikes || {}).length;
+  const iLiked = (p.likes || {})[uid];
+  const iDisliked = (p.dislikes || {})[uid];
+
+  const card = document.createElement('div');
+  card.className = 'place-card';
+  card.innerHTML = `
+    <div class="place-info">
+      <div class="place-name">${esc(p.name)}</div>
+      <div class="place-meta">${p.time ? p.time + ' · ' : ''}작성자: ${esc(p.addedBy)}</div>
+      ${p.note ? `<div class="place-note">${esc(p.note)}</div>` : ''}
+      <div class="vote-row">
+        <button class="vote-btn ${iLiked ? 'liked' : ''}" data-id="${p.id}" data-action="like">👍 ${likes}</button>
+        <button class="vote-btn ${iDisliked ? 'disliked' : ''}" data-id="${p.id}" data-action="dislike">👎 ${dislikes}</button>
+      </div>
+    </div>`;
+  card.querySelectorAll('.vote-btn').forEach(btn => {
+    btn.onclick = () => votePlace(p.id, btn.dataset.action);
+  });
+  return card;
+}
+
+function esc(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function votePlace(placeId, action) {
+  const uid = currentUser.uid;
+  const ref = db.doc(`trips/${currentTripId}/places/${placeId}`);
+  const snap = await ref.get();
+  const data = snap.data();
+  const likedByMe = (data.likes || {})[uid];
+  const dislikedByMe = (data.dislikes || {})[uid];
+
+  const update = {};
+  if (action === 'like') {
+    update[`likes.${uid}`] = likedByMe ? firebase.firestore.FieldValue.delete() : true;
+    if (!likedByMe && dislikedByMe) update[`dislikes.${uid}`] = firebase.firestore.FieldValue.delete();
+  } else {
+    update[`dislikes.${uid}`] = dislikedByMe ? firebase.firestore.FieldValue.delete() : true;
+    if (!dislikedByMe && likedByMe) update[`likes.${uid}`] = firebase.firestore.FieldValue.delete();
+  }
+  await ref.update(update);
+}
+
+function openAddPlaceModal(date) {
+  openModal(`
+    <h3>장소 추가 · ${dateLabel(date)}</h3>
+    <div class="form-group"><label>장소 이름 *</label><input id="m-place-name" type="text" placeholder="예: 도톤보리"></div>
+    <div class="form-group"><label>시간 (선택)</label><input id="m-place-time" type="time"></div>
+    <div class="form-group"><label>메모 (선택)</label><textarea id="m-place-note" rows="2" placeholder="간단한 메모"></textarea></div>
+    <button class="btn btn-primary" id="m-save-place">추가하기</button>
+  `);
+  document.getElementById('m-save-place').onclick = async () => {
+    const name = document.getElementById('m-place-name').value.trim();
+    if (!name) { toast('장소 이름을 입력해주세요'); return; }
+    const time = document.getElementById('m-place-time').value;
+    const note = document.getElementById('m-place-note').value.trim();
+    try {
+      await db.collection(`trips/${currentTripId}/places`).add({
+        name, date, time, note,
+        addedBy: currentUser.displayName || '익명',
+        likes: {}, dislikes: {},
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      closeModal();
+    } catch(e) { toast('실패: ' + e.message); }
+  };
+}
+
+// ── Votes ──
+function loadVotes() {
+  const container = document.getElementById('votes-list');
+  container.innerHTML = '<div class="spinner"></div>';
+  const unsub = db.collection(`trips/${currentTripId}/votes`)
+    .orderBy('createdAt', 'desc').onSnapshot(snap => {
+      if (snap.empty) {
+        container.innerHTML = '<div class="empty"><div class="empty-icon">🗳️</div>진행 중인 투표가 없어요</div>';
+        return;
+      }
+      container.innerHTML = '';
+      snap.forEach(doc => container.appendChild(makeVoteCard(doc.id, doc.data())));
+    }, e => { container.innerHTML = '<div class="empty">오류: ' + e.message + '</div>'; });
+  unsubscribers.push(unsub);
+}
+
+function makeVoteCard(id, v) {
+  const uid = currentUser.uid;
+  const totalVoters = new Set(v.options.flatMap(o => Object.keys(o.votes || {}))).size;
+  const maxVotes = Math.max(...v.options.map(o => Object.keys(o.votes || {}).length), 1);
+  const isClosed = v.status === 'closed';
+
+  const card = document.createElement('div');
+  card.className = 'vote-card';
+  const optionsHtml = v.options.map((opt, i) => {
+    const count = Object.keys(opt.votes || {}).length;
+    const pct = maxVotes > 0 ? Math.round(count / maxVotes * 100) : 0;
+    const voted = (opt.votes || {})[uid];
+    return `<div class="vote-option ${isClosed ? '' : 'clickable'}" data-vote-id="${id}" data-opt-idx="${i}" style="cursor:${isClosed?'default':'pointer'}">
+      ${voted ? '<div class="vote-my-mark"></div>' : '<div style="width:8px"></div>'}
+      <div class="vote-option-text">${esc(opt.text)}</div>
+      <div class="vote-bar-wrap"><div class="vote-bar" style="width:${pct}%"></div></div>
+      <div class="vote-count">${count}</div>
+    </div>`;
+  }).join('');
+
+  card.innerHTML = `
+    <div class="vote-card-title">${esc(v.title)}</div>
+    ${optionsHtml}
+    <div class="vote-status">
+      <span class="badge ${isClosed ? 'badge-closed' : 'badge-active'}">${isClosed ? '마감' : '진행중'}</span>
+      <span>${totalVoters}명 참여</span>
+      ${!isClosed && v.createdByUid === uid ? `<button class="btn btn-sm btn-outline" data-close-vote="${id}">투표 마감</button>` : ''}
+    </div>`;
+
+  if (!isClosed) {
+    card.querySelectorAll('.vote-option').forEach(el => {
+      el.onclick = () => castVote(id, v, parseInt(el.dataset.optIdx));
+    });
+  }
+  const closeBtn = card.querySelector('[data-close-vote]');
+  if (closeBtn) closeBtn.onclick = () => closeVote(id);
+  return card;
+}
+
+async function castVote(voteId, voteData, optIdx) {
+  const uid = currentUser.uid;
+  const options = voteData.options.map((o, i) => {
+    const votes = { ...(o.votes || {}) };
+    delete votes[uid];
+    if (i === optIdx) votes[uid] = true;
+    return { ...o, votes };
+  });
+  await db.doc(`trips/${currentTripId}/votes/${voteId}`).update({ options });
+}
+
+async function closeVote(voteId) {
+  await db.doc(`trips/${currentTripId}/votes/${voteId}`).update({ status: 'closed' });
+}
+
+document.getElementById('create-vote-btn').onclick = () => {
+  openModal(`
+    <h3>새 투표 만들기</h3>
+    <div class="form-group"><label>투표 제목 *</label><input id="m-vote-title" type="text" placeholder="예: 첫날 저녁 뭐 먹을까?"></div>
+    <div class="form-group"><label>선택지</label>
+      <div id="m-opts">
+        <input type="text" class="m-opt" placeholder="선택지 1" style="margin-bottom:8px">
+        <input type="text" class="m-opt" placeholder="선택지 2" style="margin-bottom:8px">
+      </div>
+      <button class="btn btn-outline btn-sm" id="m-add-opt" style="margin-top:4px">+ 선택지 추가</button>
+    </div>
+    <button class="btn btn-primary" id="m-save-vote" style="margin-top:8px">투표 만들기</button>
+  `);
+  document.getElementById('m-add-opt').onclick = () => {
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'm-opt';
+    input.placeholder = '선택지';
+    input.style.cssText = 'width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;margin-bottom:8px';
+    document.getElementById('m-opts').appendChild(input);
+  };
+  document.getElementById('m-save-vote').onclick = async () => {
+    const title = document.getElementById('m-vote-title').value.trim();
+    const opts = [...document.querySelectorAll('.m-opt')].map(i => i.value.trim()).filter(Boolean);
+    if (!title) { toast('투표 제목을 입력해주세요'); return; }
+    if (opts.length < 2) { toast('선택지를 2개 이상 입력해주세요'); return; }
+    try {
+      await db.collection(`trips/${currentTripId}/votes`).add({
+        title,
+        options: opts.map(text => ({ text, votes: {} })),
+        status: 'active',
+        createdBy: currentUser.displayName || '익명',
+        createdByUid: currentUser.uid,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      closeModal();
+    } catch(e) { toast('실패: ' + e.message); }
+  };
+};
+
+// ── Budget ──
+function loadBudget() {
+  const listEl = document.getElementById('expense-list');
+  listEl.innerHTML = '<div class="spinner"></div>';
+  const unsub = db.collection(`trips/${currentTripId}/expenses`)
+    .orderBy('createdAt', 'desc').onSnapshot(snap => {
+      const expenses = [];
+      snap.forEach(doc => expenses.push({ id: doc.id, ...doc.data() }));
+      renderBudget(expenses);
+    }, e => { listEl.innerHTML = '<div class="empty">오류: ' + e.message + '</div>'; });
+  unsubscribers.push(unsub);
+}
+
+function renderBudget(expenses) {
+  const listEl = document.getElementById('expense-list');
+  const total = expenses.reduce((s, e) => s + (e.amount || 0), 0);
+  const members = currentTrip?.members || {};
+  const memberCount = Object.keys(members).length || 1;
+  const perPerson = Math.ceil(total / memberCount);
+
+  document.getElementById('budget-total').textContent = formatKRW(total);
+  document.getElementById('budget-per-person').textContent = `1인당 ${formatKRW(perPerson)} (${memberCount}명 기준)`;
+
+  if (!expenses.length) {
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">💸</div>아직 지출이 없어요</div>';
+    document.getElementById('settlement-section').style.display = 'none';
+    return;
+  }
+
+  listEl.innerHTML = expenses.map(e => `
+    <div class="expense-card">
+      <div class="expense-info">
+        <div class="expense-desc">${esc(e.description)}</div>
+        <div class="expense-by">${esc(e.paidBy)} 결제</div>
+      </div>
+      <div class="expense-amount">${formatKRW(e.amount)}</div>
+    </div>
+  `).join('');
+
+  // Settlement: who paid how much vs share
+  const paidMap = {};
+  expenses.forEach(e => {
+    paidMap[e.paidBy] = (paidMap[e.paidBy] || 0) + (e.amount || 0);
+  });
+  const tbody = document.getElementById('settlement-tbody');
+  tbody.innerHTML = Object.entries(paidMap).map(([name, paid]) => {
+    const diff = paid - perPerson;
+    const status = diff > 0 ? `+${formatKRW(diff)} 받아야함` : diff < 0 ? `${formatKRW(Math.abs(diff))} 줘야함` : '정산 완료';
+    return `<tr><td>${esc(name)}</td><td>${formatKRW(paid)}</td><td>${formatKRW(perPerson)}</td><td style="color:${diff>0?'var(--success)':diff<0?'var(--danger)':'var(--muted)'}">${status}</td></tr>`;
+  }).join('');
+  document.getElementById('settlement-section').style.display = 'block';
+}
+
+document.getElementById('add-expense-btn').onclick = () => {
+  openModal(`
+    <h3>지출 추가</h3>
+    <div class="form-group"><label>내용 *</label><input id="m-exp-desc" type="text" placeholder="예: 점심 라멘"></div>
+    <div class="form-group"><label>금액 (₩) *</label><input id="m-exp-amount" type="number" placeholder="0" min="0"></div>
+    <div class="form-group"><label>결제자</label>
+      <select id="m-exp-payer">
+        ${Object.values(currentTrip?.members || {}).map(name => `<option value="${esc(name)}">${esc(name)}</option>`).join('')}
+      </select>
+    </div>
+    <button class="btn btn-primary" id="m-save-exp" style="margin-top:8px">추가하기</button>
+  `);
+  // set default to current user
+  const myName = currentUser.displayName || '익명';
+  const sel = document.getElementById('m-exp-payer');
+  for (let opt of sel.options) { if (opt.value === myName) { opt.selected = true; break; } }
+
+  document.getElementById('m-save-exp').onclick = async () => {
+    const desc = document.getElementById('m-exp-desc').value.trim();
+    const amount = parseInt(document.getElementById('m-exp-amount').value);
+    const paidBy = document.getElementById('m-exp-payer').value;
+    if (!desc || !amount || amount <= 0) { toast('내용과 금액을 입력해주세요'); return; }
+    try {
+      await db.collection(`trips/${currentTripId}/expenses`).add({
+        description: desc, amount, paidBy,
+        paidByUid: currentUser.uid,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      closeModal();
+    } catch(e) { toast('실패: ' + e.message); }
+  };
+};
+
+// ── Chat ──
+function loadChat() {
+  const container = document.getElementById('messages');
+  // Avoid duplicate listener
+  if (container.dataset.loaded === currentTripId) return;
+  container.dataset.loaded = currentTripId;
+  container.innerHTML = '';
+
+  const unsub = db.collection(`trips/${currentTripId}/messages`)
+    .orderBy('createdAt').limitToLast(100)
+    .onSnapshot(snap => {
+      snap.docChanges().forEach(change => {
+        if (change.type === 'added') {
+          container.appendChild(makeMsgEl(change.doc.data()));
+          container.scrollTop = container.scrollHeight;
+        }
+      });
+    });
+  unsubscribers.push(unsub);
+}
+
+function makeMsgEl(msg) {
+  const mine = msg.uid === currentUser.uid;
+  const div = document.createElement('div');
+  div.className = 'msg' + (mine ? ' mine' : '');
+  const time = msg.createdAt ? fmtTime(msg.createdAt) : '';
+
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  if (msg.photoURL) {
+    const img = document.createElement('img');
+    img.src = msg.photoURL;
+    img.alt = msg.displayName || '';
+    img.onerror = () => { img.remove(); avatar.textContent = initials(msg.displayName); };
+    avatar.appendChild(img);
+  } else {
+    avatar.textContent = initials(msg.displayName);
+  }
+
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.innerHTML = `
+    <div class="msg-name">${esc(msg.displayName)}</div>
+    <div class="msg-bubble">${esc(msg.text)}</div>
+    <div class="msg-time">${time}</div>`;
+
+  div.appendChild(avatar);
+  div.appendChild(body);
+  return div;
+}
+
+document.getElementById('send-btn').onclick = sendMessage;
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+});
+
+async function sendMessage() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text || !currentTripId) return;
+  input.value = '';
+  try {
+    await db.collection(`trips/${currentTripId}/messages`).add({
+      text,
+      uid: currentUser.uid,
+      displayName: currentUser.displayName || '익명',
+      photoURL: currentUser.photoURL || null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  } catch(e) { toast('전송 실패: ' + e.message); input.value = text; }
+}
+</script>
+</body>
+</html>
