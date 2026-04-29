@@ -189,44 +189,77 @@
   .settlement-table th { background: var(--bg); font-weight: 600; color: var(--muted); }
   .settlement-table tr:last-child td { border-bottom: none; }
 
-  /* ── Chat tab ── */
-  #chat-panel { display: none; flex-direction: column; }
-  #chat-panel.active { display: flex; }
-  #messages {
-    flex: 1; overflow-y: auto; padding: 8px 0; display: flex; flex-direction: column; gap: 8px;
-    min-height: 0; max-height: calc(100vh - var(--header-h) - 46px - 56px - 48px);
+  /* ── Threads tab ── */
+  #panel-chat {
+    width: 100%; height: 100%; min-height: 0; max-width: 600px; flex-direction: column;
   }
-  .msg { display: flex; gap: 8px; align-items: flex-end; }
-  .msg.mine { flex-direction: row-reverse; }
+  .thread-list-view, .thread-detail-view {
+    flex: 1; min-height: 0; display: flex; flex-direction: column;
+  }
+  .thread-list { overflow-y: auto; padding-bottom: 8px; }
+  .thread-card {
+    background: var(--card); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px; margin-bottom: 12px; cursor: pointer;
+  }
+  .swipe-item .thread-card {
+    position: relative; z-index: 1; margin-bottom: 0; transition: transform .18s ease;
+  }
+  .swipe-item.open .thread-card { transform: translateX(-128px); }
+  .thread-card:hover { border-color: var(--primary); }
+  .thread-info { min-width: 0; }
+  .thread-title-row { display: flex; align-items: center; gap: 7px; min-width: 0; }
+  .thread-title {
+    font-weight: 700; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .thread-new-badge {
+    flex-shrink: 0; padding: 2px 6px; border-radius: 999px;
+    background: #fff0f0; color: #e53935; font-size: 10px; font-weight: 800; line-height: 1.2;
+  }
+  .thread-private-badge {
+    flex-shrink: 0; padding: 2px 7px; border-radius: 999px;
+    background: var(--bg); color: var(--muted); border: 1px solid var(--border);
+    font-size: 10px; font-weight: 700; line-height: 1.2;
+  }
+  .thread-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  .thread-action-btn {
+    border: 1px solid var(--border); background: var(--card); color: var(--muted);
+    border-radius: 8px; padding: 6px 9px; font-size: 12px; font-weight: 700; cursor: pointer;
+  }
+  .thread-action-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .thread-action-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+  .thread-detail-header {
+    display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    padding-bottom: 10px; border-bottom: 1px solid var(--border);
+  }
+  .thread-back-btn {
+    width: 34px; height: 34px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--card); color: var(--text); font-size: 18px; cursor: pointer; flex-shrink: 0;
+  }
+  .thread-detail-title {
+    flex: 1; min-width: 0; font-size: 16px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .thread-messages {
+    flex: 1; min-height: 0; overflow-y: auto; padding: 8px 0;
+  }
+  .thread-message-stack { display: flex; flex-direction: column; }
+  .thread-post {
+    display: flex; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--border);
+  }
+  .thread-post:last-child { border-bottom: none; }
   .msg-avatar {
     width: 32px; height: 32px; border-radius: 50%; background: var(--primary);
     color: #fff; display: flex; align-items: center; justify-content: center;
-    font-size: 13px; font-weight: 700; flex-shrink: 0; overflow: hidden;
+    font-size: 13px; font-weight: 700; flex-shrink: 0; overflow: hidden; margin-top: 2px;
   }
   .msg-avatar img { width: 32px; height: 32px; object-fit: cover; display: block; }
-  .msg-body { max-width: 70%; }
-  .msg-name { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
-  .mine .msg-name { text-align: right; }
-  .msg-bubble {
-    padding: 9px 13px; border-radius: 16px; font-size: 14px; line-height: 1.4;
-    background: var(--card); border: 1px solid var(--border); word-break: break-word;
+  .thread-post-body { flex: 1; min-width: 0; }
+  .thread-post-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
+  .thread-post-name { font-size: 14px; font-weight: 700; }
+  .thread-post-time { font-size: 12px; color: var(--muted); }
+  .thread-post-text { font-size: 15px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+  .thread-reply-btn {
+    width: 100%; margin-top: 12px; flex-shrink: 0;
   }
-  .mine .msg-bubble { background: var(--primary); color: #fff; border: none; }
-  .msg-time { font-size: 10px; color: var(--muted); margin-top: 2px; }
-  .mine .msg-time { text-align: right; }
-  #chat-input-row {
-    display: flex; gap: 8px; padding: 8px 0 4px; border-top: 1px solid var(--border); margin-top: 8px;
-  }
-  #chat-input-row input {
-    flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 24px;
-    font-size: 14px; outline: none;
-  }
-  #chat-input-row input:focus { border-color: var(--primary); }
-  #send-btn {
-    padding: 10px 16px; background: var(--primary); color: #fff; border: none;
-    border-radius: 24px; font-size: 14px; font-weight: 600; cursor: pointer;
-  }
-  #send-btn:hover { background: var(--primary-dark); }
 
   /* ── Modal ── */
   .modal-overlay {
@@ -324,7 +357,7 @@
     <button class="tab-btn active" data-tab="itinerary">📅 일정</button>
     <button class="tab-btn" data-tab="votes">🗳️ 투표</button>
     <button class="tab-btn" data-tab="budget">💰 예산</button>
-    <button class="tab-btn" data-tab="chat">💬 채팅</button>
+    <button class="tab-btn" data-tab="chat">💬 스레드</button>
   </nav>
 
   <div id="tab-content">
@@ -356,12 +389,22 @@
       </div>
     </div>
 
-    <!-- Chat -->
+    <!-- Threads -->
     <div class="tab-panel" id="panel-chat" style="display:none">
-      <div id="messages"></div>
-      <div id="chat-input-row">
-        <input type="text" id="chat-input" placeholder="메시지를 입력하세요..." maxlength="500">
-        <button id="send-btn">전송</button>
+      <div class="thread-list-view" id="thread-list-view">
+        <button class="btn btn-primary" id="new-thread-btn" style="margin-bottom:16px">+ 새 스레드 만들기</button>
+        <div class="thread-list" id="thread-list"></div>
+      </div>
+      <div class="thread-detail-view" id="thread-detail-view" style="display:none">
+        <div class="thread-detail-header">
+          <button class="thread-back-btn" id="thread-back-btn" type="button" aria-label="스레드 목록">‹</button>
+          <div class="thread-detail-title" id="thread-detail-title"></div>
+          <div class="thread-actions" id="thread-detail-actions"></div>
+        </div>
+        <div class="thread-messages" id="thread-messages">
+          <div class="thread-message-stack" id="thread-message-stack"></div>
+        </div>
+        <button class="btn btn-primary thread-reply-btn" id="thread-reply-btn">+ 답글 추가</button>
       </div>
     </div>
   </div>
@@ -411,6 +454,12 @@ let currentTrip = null;
 let currentTripId = null;
 let unsubscribers = [];
 let activeTab = 'itinerary';
+let threadUnsubs = [];
+let threadQueryState = { public: [], private: [] };
+let threadRenderSeq = 0;
+let threadMessagesUnsub = null;
+let activeThreadId = null;
+let activeThreadData = null;
 
 // ── Util ──
 function toast(msg, dur = 2500) {
@@ -430,6 +479,17 @@ function fmtTime(date) {
   if (!date) return '';
   const d = date.toDate ? date.toDate() : new Date(date);
   return d.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtDateTime(date) {
+  if (!date) return '방금 전';
+  return `${fmt(date)} ${fmtTime(date)}`;
+}
+
+function tsMillis(date) {
+  if (!date) return 0;
+  if (date.toMillis) return date.toMillis();
+  return new Date(date).getTime() || 0;
 }
 
 function genCode() {
@@ -635,6 +695,7 @@ function openTrip(id, data) {
   currentTrip = data;
   unsubscribers.forEach(u => u());
   unsubscribers = [];
+  stopThreadListeners();
 
   document.getElementById('trip-screen').style.display = 'none';
   document.getElementById('app').classList.add('active');
@@ -647,6 +708,7 @@ function openTrip(id, data) {
 document.getElementById('back-btn').onclick = () => {
   unsubscribers.forEach(u => u());
   unsubscribers = [];
+  stopThreadListeners();
   currentTripId = null;
   currentTrip = null;
   showTripScreen();
@@ -860,11 +922,14 @@ function switchTab(tab) {
   const panel = document.getElementById('panel-' + tab);
   panel.classList.add('active');
 
-  // Chat needs flex
+  stopThreadMessageListener();
+
+  // Threads need flex
   if (tab === 'chat') {
     panel.style.display = 'flex';
     panel.style.flexDirection = 'column';
-    loadChat();
+    showThreadList();
+    loadThreads();
   } else if (tab === 'itinerary') {
     loadItinerary();
   } else if (tab === 'votes') {
@@ -967,7 +1032,8 @@ function toggleSwipeItem(item, forceOpen) {
 }
 
 function bindSwipeActions(item) {
-  const content = item.querySelector('.place-card');
+  const content = item.querySelector('.place-card, .thread-card');
+  if (!content) return;
   let startX = 0, startY = 0, deltaX = 0, dragging = false, horizontal = false;
 
   content.addEventListener('pointerdown', e => {
@@ -1278,31 +1344,192 @@ document.getElementById('add-expense-btn').onclick = () => {
   };
 };
 
-// ── Chat ──
-function loadChat() {
-  const container = document.getElementById('messages');
-  // Avoid duplicate listener
-  if (container.dataset.loaded === currentTripId) return;
-  container.dataset.loaded = currentTripId;
-  container.innerHTML = '';
+// ── Threads ──
+function stopThreadMessageListener() {
+  if (threadMessagesUnsub) {
+    threadMessagesUnsub();
+    threadMessagesUnsub = null;
+  }
+}
 
-  const unsub = db.collection(`trips/${currentTripId}/messages`)
-    .orderBy('createdAt').limitToLast(100)
+function stopThreadListeners() {
+  threadUnsubs.forEach(unsub => unsub());
+  threadUnsubs = [];
+  threadQueryState = { public: [], private: [] };
+  threadRenderSeq++;
+  stopThreadMessageListener();
+  activeThreadId = null;
+  activeThreadData = null;
+}
+
+function loadThreads() {
+  const listEl = document.getElementById('thread-list');
+  if (threadUnsubs.length && listEl.dataset.loaded === currentTripId) return;
+  threadUnsubs.forEach(unsub => unsub());
+  threadUnsubs = [];
+  threadQueryState = { public: [], private: [] };
+  listEl.dataset.loaded = currentTripId;
+  listEl.innerHTML = '<div class="spinner"></div>';
+
+  const base = db.collection(`trips/${currentTripId}/threads`);
+  const queries = [
+    ['public', base.where('deleted', '==', false).where('visibility', '==', 'public')],
+    ['private', base.where('deleted', '==', false).where('visibility', '==', 'private').where('createdByUid', '==', currentUser.uid)]
+  ];
+
+  queries.forEach(([key, query]) => {
+    const unsub = query.onSnapshot(snap => {
+      threadQueryState[key] = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderMergedThreads();
+    }, e => { listEl.innerHTML = '<div class="empty">오류: ' + e.message + '</div>'; });
+    threadUnsubs.push(unsub);
+  });
+}
+
+async function renderMergedThreads() {
+  const byId = {};
+  [...threadQueryState.public, ...threadQueryState.private].forEach(thread => {
+    byId[thread.id] = thread;
+  });
+  const threads = Object.values(byId).sort((a, b) => tsMillis(b.updatedAt) - tsMillis(a.updatedAt));
+  const seq = ++threadRenderSeq;
+  const enriched = await Promise.all(threads.map(async thread => {
+    const readAt = await getThreadReadAt(thread.id);
+    return { ...thread, readAt, isNew: isThreadNew(thread, readAt) };
+  }));
+  if (seq !== threadRenderSeq) return;
+  renderThreads(enriched);
+}
+
+async function getThreadReadAt(threadId) {
+  try {
+    const snap = await db.doc(`trips/${currentTripId}/threads/${threadId}/reads/${currentUser.uid}`).get();
+    return snap.exists ? snap.data().readAt : null;
+  } catch(e) {
+    console.warn('스레드 읽음 상태 불러오기 실패:', e);
+    return null;
+  }
+}
+
+function isThreadNew(thread, readAt) {
+  const updated = tsMillis(thread.updatedAt);
+  if (!updated) return false;
+  return updated > tsMillis(readAt);
+}
+
+function renderThreads(threads) {
+  const listEl = document.getElementById('thread-list');
+  if (!threads.length) {
+    listEl.innerHTML = '<div class="empty"><div class="empty-icon">💬</div>아직 스레드가 없어요</div>';
+    if (activeThreadId) showThreadList();
+    return;
+  }
+
+  if (activeThreadId && !threads.some(t => t.id === activeThreadId)) {
+    showThreadList();
+  }
+
+  listEl.innerHTML = '';
+  threads.forEach(thread => listEl.appendChild(makeThreadCard(thread)));
+}
+
+function makeThreadCard(thread) {
+  const canManage = thread.createdByUid === currentUser.uid;
+  const card = document.createElement('div');
+  card.className = 'thread-card';
+  card.innerHTML = `
+    <div class="thread-info">
+      <div class="thread-title-row">
+        ${thread.isNew ? '<span class="thread-new-badge">NEW</span>' : ''}
+        <div class="thread-title">${esc(thread.title)}</div>
+        ${thread.visibility === 'private' ? '<span class="thread-private-badge">🔒 나만</span>' : ''}
+      </div>
+    </div>
+  `;
+
+  card.onclick = () => openThread(thread.id, thread);
+  if (!canManage) return card;
+
+  const item = document.createElement('div');
+  item.className = 'swipe-item';
+  item.innerHTML = `
+    <div class="place-actions">
+      <button class="place-action edit" type="button">수정</button>
+      <button class="place-action delete" type="button">삭제</button>
+    </div>`;
+  item.appendChild(card);
+  bindSwipeActions(item);
+  item.querySelector('.place-action.edit').onclick = () => openEditThreadModal(thread);
+  item.querySelector('.place-action.delete').onclick = () => deleteThread(thread);
+  return item;
+}
+
+function showThreadList() {
+  stopThreadMessageListener();
+  activeThreadId = null;
+  activeThreadData = null;
+  document.getElementById('thread-list-view').style.display = 'flex';
+  document.getElementById('thread-detail-view').style.display = 'none';
+  renderMergedThreads();
+}
+
+function openThread(threadId, thread) {
+  activeThreadId = threadId;
+  activeThreadData = thread;
+  document.getElementById('thread-list-view').style.display = 'none';
+  document.getElementById('thread-detail-view').style.display = 'flex';
+  document.getElementById('thread-detail-title').textContent = thread.title || '스레드';
+  renderThreadDetailActions(thread);
+  markThreadRead(threadId);
+  loadThreadMessages(threadId);
+}
+
+function renderThreadDetailActions(thread) {
+  const actions = document.getElementById('thread-detail-actions');
+  actions.innerHTML = '';
+}
+
+function loadThreadMessages(threadId) {
+  stopThreadMessageListener();
+  const stack = document.getElementById('thread-message-stack');
+  stack.innerHTML = '<div class="empty">메시지가 아직 없어요</div>';
+
+  threadMessagesUnsub = db.collection(`trips/${currentTripId}/threads/${threadId}/messages`)
+    .orderBy('createdAt')
+    .limitToLast(100)
     .onSnapshot(snap => {
-      snap.docChanges().forEach(change => {
-        if (change.type === 'added') {
-          container.appendChild(makeMsgEl(change.doc.data()));
-          container.scrollTop = container.scrollHeight;
-        }
-      });
-    });
-  unsubscribers.push(unsub);
+      stack.innerHTML = '';
+      if (snap.empty) {
+        stack.innerHTML = '<div class="empty">메시지가 아직 없어요</div>';
+      } else {
+        snap.forEach(doc => stack.appendChild(makeMsgEl(doc.data())));
+      }
+    }, e => { stack.innerHTML = '<div class="empty">오류: ' + e.message + '</div>'; });
+}
+
+async function markThreadRead(threadId) {
+  try {
+    await db.doc(`trips/${currentTripId}/threads/${threadId}/reads/${currentUser.uid}`).set({
+      uid: currentUser.uid,
+      readAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    updateThreadReadState(threadId, new Date());
+  } catch(e) {
+    console.warn('스레드 읽음 처리 실패:', e);
+  }
+}
+
+function updateThreadReadState(threadId, readAt) {
+  ['public', 'private'].forEach(key => {
+    threadQueryState[key] = threadQueryState[key].map(thread => (
+      thread.id === threadId ? { ...thread, readAt } : thread
+    ));
+  });
 }
 
 function makeMsgEl(msg) {
-  const mine = msg.uid === currentUser.uid;
   const div = document.createElement('div');
-  div.className = 'msg' + (mine ? ' mine' : '');
+  div.className = 'thread-post';
   const time = msg.createdAt ? fmtTime(msg.createdAt) : '';
 
   const avatar = document.createElement('div');
@@ -1318,36 +1545,164 @@ function makeMsgEl(msg) {
   }
 
   const body = document.createElement('div');
-  body.className = 'msg-body';
+  body.className = 'thread-post-body';
   body.innerHTML = `
-    <div class="msg-name">${esc(msg.displayName)}</div>
-    <div class="msg-bubble">${esc(msg.text)}</div>
-    <div class="msg-time">${time}</div>`;
+    <div class="thread-post-meta">
+      <span class="thread-post-name">${esc(msg.displayName)}</span>
+      <span class="thread-post-time">${time}</span>
+    </div>
+    <div class="thread-post-text">${esc(msg.text)}</div>`;
 
   div.appendChild(avatar);
   div.appendChild(body);
   return div;
 }
 
-document.getElementById('send-btn').onclick = sendMessage;
-document.getElementById('chat-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
-});
+document.getElementById('new-thread-btn').onclick = openCreateThreadModal;
+document.getElementById('thread-back-btn').onclick = showThreadList;
+document.getElementById('thread-reply-btn').onclick = openThreadReplyModal;
 
-async function sendMessage() {
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text || !currentTripId) return;
-  input.value = '';
+function openCreateThreadModal() {
+  openModal(`
+    <h3>새 스레드</h3>
+    <div class="form-group"><label>주제명 *</label><input id="m-thread-title" type="text" maxlength="80" placeholder="예: 첫날 저녁 메뉴"></div>
+    <div class="form-group">
+      <label>공개 설정</label>
+      <select id="m-thread-visibility">
+        <option value="public">모든 멤버</option>
+        <option value="private">나만 보기</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" id="m-save-thread">만들기</button>
+  `);
+  document.getElementById('m-save-thread').onclick = createThread;
+}
+
+function openEditThreadModal(thread) {
+  openModal(`
+    <h3>스레드 수정</h3>
+    <div class="form-group"><label>주제명 *</label><input id="m-thread-title" type="text" maxlength="80" value="${escAttr(thread.title || '')}"></div>
+    <button class="btn btn-primary" id="m-save-thread">저장하기</button>
+  `);
+  document.getElementById('m-save-thread').onclick = () => updateThreadTitle(thread.id);
+}
+
+async function createThread() {
+  const input = document.getElementById('m-thread-title');
+  const title = input.value.trim();
+  const visibility = document.getElementById('m-thread-visibility').value;
+  if (!title) { toast('주제명을 입력해주세요'); return; }
+  const btn = document.getElementById('m-save-thread');
+  btn.disabled = true;
   try {
-    await db.collection(`trips/${currentTripId}/messages`).add({
+    const ref = db.collection(`trips/${currentTripId}/threads`).doc();
+    const threadData = {
+      title,
+      visibility,
+      createdByUid: currentUser.uid,
+      createdByName: currentUser.displayName || '익명',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      deleted: false
+    };
+    await ref.set(threadData);
+    await markThreadRead(ref.id);
+    closeModal();
+    openThread(ref.id, {
+      id: ref.id,
+      title,
+      visibility,
+      createdByUid: currentUser.uid,
+      createdByName: currentUser.displayName || '익명',
+      updatedAt: null,
+      readAt: new Date(),
+      isNew: false,
+      deleted: false
+    });
+  } catch(e) {
+    toast('생성 실패: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+async function updateThreadTitle(threadId) {
+  const input = document.getElementById('m-thread-title');
+  const title = input.value.trim();
+  if (!title) { toast('주제명을 입력해주세요'); return; }
+  const btn = document.getElementById('m-save-thread');
+  btn.disabled = true;
+  try {
+    await db.doc(`trips/${currentTripId}/threads/${threadId}`).update({
+      title,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    closeModal();
+    if (activeThreadId === threadId) {
+      activeThreadData = { ...activeThreadData, title };
+      document.getElementById('thread-detail-title').textContent = title;
+    }
+    toast('스레드가 수정됐어요');
+  } catch(e) {
+    toast('수정 실패: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+async function deleteThread(thread) {
+  if (!confirm(`'${thread.title}' 스레드를 삭제할까요?`)) return;
+  try {
+    await db.doc(`trips/${currentTripId}/threads/${thread.id}`).update({
+      deleted: true,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (activeThreadId === thread.id) showThreadList();
+    toast('스레드가 삭제됐어요');
+  } catch(e) {
+    toast('삭제 실패: ' + e.message);
+  }
+}
+
+function openThreadReplyModal() {
+  if (!activeThreadId) return;
+  openModal(`
+    <h3>답글 추가</h3>
+    <div class="form-group"><label>내용 *</label><textarea id="m-thread-reply" rows="5" maxlength="500" placeholder="답글을 입력하세요"></textarea></div>
+    <button class="btn btn-primary" id="m-send-thread-reply">등록하기</button>
+  `);
+  document.getElementById('m-send-thread-reply').onclick = sendThreadMessage;
+}
+
+async function sendThreadMessage() {
+  const input = document.getElementById('m-thread-reply');
+  const text = input.value.trim();
+  if (!text || !currentTripId || !activeThreadId) return;
+  const btn = document.getElementById('m-send-thread-reply');
+  btn.disabled = true;
+  try {
+    const batch = db.batch();
+    const msgRef = db.collection(`trips/${currentTripId}/threads/${activeThreadId}/messages`).doc();
+    const threadRef = db.doc(`trips/${currentTripId}/threads/${activeThreadId}`);
+    batch.set(msgRef, {
       text,
       uid: currentUser.uid,
       displayName: currentUser.displayName || '익명',
       photoURL: currentUser.photoURL || null,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-  } catch(e) { toast('전송 실패: ' + e.message); input.value = text; }
+    batch.update(threadRef, {
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    batch.set(db.doc(`trips/${currentTripId}/threads/${activeThreadId}/reads/${currentUser.uid}`), {
+      uid: currentUser.uid,
+      readAt: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+    await batch.commit();
+    updateThreadReadState(activeThreadId, new Date());
+    closeModal();
+  } catch(e) {
+    toast('전송 실패: ' + e.message);
+    btn.disabled = false;
+  }
 }
 </script>
 </body>

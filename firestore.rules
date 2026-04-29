@@ -46,6 +46,18 @@ service cloud.firestore {
         && request.resource.data.dislikes.diff(resource.data.dislikes).affectedKeys().hasOnly([request.auth.uid]);
     }
 
+    function canAccessThreadData(tripId, thread) {
+      return isTripMember(tripId)
+        && thread.deleted == false
+        && (
+          thread.visibility == 'public'
+          || (
+            thread.visibility == 'private'
+            && thread.createdByUid == request.auth.uid
+          )
+        );
+    }
+
     match /userProfiles/{uid} {
       allow read: if signedIn();
       allow create, update: if signedIn()
@@ -95,6 +107,63 @@ service cloud.firestore {
       match /expenses/{expenseId} {
         allow read, create, update: if isTripMember(tripId);
         allow delete: if false;
+      }
+
+      match /threads/{threadId} {
+        allow read: if canAccessThreadData(tripId, resource.data);
+        allow create: if isTripMember(tripId)
+          && request.resource.data.keys().hasOnly(['title', 'visibility', 'createdByUid', 'createdByName', 'createdAt', 'updatedAt', 'deleted'])
+          && request.resource.data.title is string
+          && request.resource.data.visibility in ['public', 'private']
+          && request.resource.data.createdByUid == request.auth.uid
+          && request.resource.data.createdByName is string
+          && request.resource.data.deleted == false;
+        allow update: if isTripMember(tripId)
+          && (
+            (
+              resource.data.createdByUid == request.auth.uid
+              && request.resource.data.createdByUid == resource.data.createdByUid
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'updatedAt', 'deleted'])
+              && request.resource.data.title is string
+            )
+            || (
+              canAccessThreadData(tripId, resource.data)
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['updatedAt'])
+            )
+          );
+        allow delete: if false;
+
+        match /messages/{messageId} {
+          allow read: if canAccessThreadData(
+            tripId,
+            get(/databases/$(database)/documents/trips/$(tripId)/threads/$(threadId)).data
+          );
+          allow create: if canAccessThreadData(
+            tripId,
+            get(/databases/$(database)/documents/trips/$(tripId)/threads/$(threadId)).data
+          )
+            && request.resource.data.keys().hasOnly(['text', 'uid', 'displayName', 'photoURL', 'createdAt'])
+            && request.resource.data.text is string
+            && request.resource.data.uid == request.auth.uid
+            && request.resource.data.displayName is string;
+          allow update, delete: if false;
+        }
+
+        match /reads/{uid} {
+          allow read: if uid == request.auth.uid
+            && canAccessThreadData(
+              tripId,
+              get(/databases/$(database)/documents/trips/$(tripId)/threads/$(threadId)).data
+            );
+          allow create, update: if uid == request.auth.uid
+            && canAccessThreadData(
+              tripId,
+              get(/databases/$(database)/documents/trips/$(tripId)/threads/$(threadId)).data
+            )
+            && request.resource.data.keys().hasOnly(['uid', 'readAt'])
+            && request.resource.data.uid == request.auth.uid;
+          allow delete: if false;
+        }
       }
 
       match /messages/{messageId} {
