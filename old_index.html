@@ -329,7 +329,7 @@
     </div>
   </div>
   <div class="divider">새 여행</div>
-  <div class="form-group"><label>여행 이름</label><input type="text" id="new-trip-name" placeholder="예: 오사카 4박5일"></div>
+  <div class="form-group"><label>여행 이름</label><input type="text" id="new-trip-name" placeholder="예: 파리 7박8일"></div>
   <div class="form-group"><label>출발일</label><input type="date" id="new-trip-start"></div>
   <div class="form-group"><label>귀국일</label><input type="date" id="new-trip-end"></div>
   <button class="btn btn-primary" id="create-trip-btn">여행 만들기</button>
@@ -447,6 +447,13 @@ firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
 const db = firebase.firestore();
 const storage = firebase.storage();
+
+if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+  auth.useEmulator('http://localhost:9099');
+  db.useEmulator('localhost', 8080);
+  storage.useEmulator('localhost', 9199);
+  console.log('🔗 Connected to Firebase Emulators');
+}
 
 // ── State ──
 let currentUser = null;
