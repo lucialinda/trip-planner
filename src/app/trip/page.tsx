@@ -5,27 +5,57 @@ import { useEffect, useState, Suspense } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Button } from "@/components/ui/button";
-import { ChevronLeft, Share2, Users, Link as LinkIcon, Copy, Share } from "lucide-react";
+import {
+  ChevronLeft,
+  Share2,
+  Link as LinkIcon,
+  Copy,
+  Share,
+  Users,
+} from "lucide-react";
 import { toast } from "sonner";
 import { MembersDialog } from "@/components/MembersDialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { ItineraryTab } from "@/components/ItineraryTab";
+import { BottomNav } from "@/components/BottomNav";
+
+interface TripData {
+  id: string;
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  code?: string;
+  members?: Record<string, string>;
+  [key: string]: unknown;
+}
+
+function dDayLabel(startDate?: string, endDate?: string) {
+  if (!startDate || !endDate) return "";
+  const today = new Date().toISOString().split("T")[0];
+  if (today < startDate) {
+    const diff = Math.round(
+      (new Date(startDate).getTime() - new Date(today).getTime()) /
+        (1000 * 60 * 60 * 24)
+    );
+    return `D-${diff}`;
+  }
+  if (today > endDate) return "다녀온 여행";
+  return "여행 중";
+}
 
 function TripContent() {
   const searchParams = useSearchParams();
   const tripId = searchParams.get("id");
   const { user } = useAuth();
   const router = useRouter();
-  
-  const [trip, setTrip] = useState<any>(null);
+
+  const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showMembers, setShowMembers] = useState(false);
 
@@ -34,10 +64,10 @@ function TripContent() {
       if (!tripId && !loading) router.push("/");
       return;
     }
-    
+
     const unsub = onSnapshot(doc(db, "trips", tripId), (docSnap) => {
       if (docSnap.exists()) {
-        setTrip({ id: docSnap.id, ...docSnap.data() });
+        setTrip({ id: docSnap.id, ...docSnap.data() } as TripData);
       } else {
         toast.error("여행 정보를 찾을 수 없습니다.");
         router.push("/");
@@ -46,6 +76,7 @@ function TripContent() {
     });
 
     return () => unsub();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId, user, router]);
 
   const handleCopyLink = async () => {
@@ -54,7 +85,7 @@ function TripContent() {
     try {
       await navigator.clipboard.writeText(joinUrl);
       toast.success("초대 링크가 복사되었습니다!");
-    } catch (err) {
+    } catch {
       toast.error("링크 복사에 실패했습니다.");
     }
   };
@@ -64,39 +95,57 @@ function TripContent() {
     try {
       await navigator.clipboard.writeText(code);
       toast.success(`참가 코드(${code})가 복사되었습니다!`);
-    } catch (err) {
+    } catch {
       toast.error("코드 복사에 실패했습니다.");
     }
   };
 
   const handleNativeShare = async () => {
-    const code = trip?.code || "";
+    if (!trip) return;
+    const code = trip.code || "";
     const joinUrl = `${window.location.origin}/?joinCode=${code}`;
     try {
-      await navigator.share({ title: trip.name, text: `여행 플래너에 초대합니다!\n초대 링크: ${joinUrl}` });
-    } catch (err) {
+      await navigator.share({
+        title: trip.name,
+        text: `여행 플래너에 초대합니다!\n초대 링크: ${joinUrl}`,
+      });
+    } catch {
       // ignore
     }
   };
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">로딩중...</div>;
+  if (loading)
+    return (
+      <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+        로딩중...
+      </div>
+    );
   if (!trip) return null;
 
-  const membersCount = Object.keys(trip.members || {}).length;
+  const memberCount = Object.keys(trip.members || {}).length;
+  const dLabel = dDayLabel(trip.startDate, trip.endDate);
 
   return (
-    <div className="flex flex-col h-screen w-full max-w-3xl mx-auto bg-slate-50 relative shadow-sm sm:border-x">
-      <header className="h-14 bg-white border-b flex items-center px-4 gap-3 shrink-0 sticky top-0 z-10">
-        <Button variant="ghost" size="icon" onClick={() => router.push("/")} className="shrink-0 -ml-2">
+    <div className="relative min-h-screen w-full max-w-3xl mx-auto bg-slate-50 pb-24 shadow-sm sm:border-x">
+      {/* TopAppBar */}
+      <header className="h-14 bg-white/80 backdrop-blur-md border-b border-sky-100 flex items-center justify-between px-2 sticky top-0 z-30">
+        <button
+          type="button"
+          onClick={() => router.push("/")}
+          aria-label="뒤로가기"
+          className="w-10 h-10 flex items-center justify-center text-primary hover:bg-sky-50 transition-colors active:scale-95 rounded-full"
+        >
           <ChevronLeft className="h-6 w-6" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <h1 className="font-bold text-base truncate">{trip.name}</h1>
-          <p className="text-xs text-muted-foreground truncate">{trip.startDate} ~ {trip.endDate}</p>
-        </div>
+        </button>
+        <h1 className="text-base font-bold text-on-surface tracking-tight">
+          내 일정
+        </h1>
         <DropdownMenu>
-          <DropdownMenuTrigger className="inline-flex items-center justify-center shrink-0 h-9 w-9 rounded-md hover:bg-slate-100 transition-colors">
-            <Share2 className="h-5 w-5 text-muted-foreground" />
+          <DropdownMenuTrigger
+            aria-label="공유"
+            className="w-10 h-10 flex items-center justify-center text-primary hover:bg-sky-50 transition-colors active:scale-95 rounded-full"
+          >
+            <Share2 className="h-5 w-5" />
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end">
             <DropdownMenuItem onClick={handleCopyLink}>
@@ -107,51 +156,66 @@ function TripContent() {
               <Copy className="mr-2 h-4 w-4" />
               <span>참가 코드 복사 (6자리)</span>
             </DropdownMenuItem>
-            {typeof navigator !== 'undefined' && !!navigator.share && (
+            {typeof navigator !== "undefined" && !!navigator.share && (
               <DropdownMenuItem onClick={handleNativeShare}>
                 <Share className="mr-2 h-4 w-4" />
                 <span>다른 앱으로 공유</span>
               </DropdownMenuItem>
             )}
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onClick={() => setShowMembers(true)}>
+              <Users className="mr-2 h-4 w-4" />
+              <span>멤버 보기 ({memberCount}명)</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
-        <Button variant="ghost" size="icon" onClick={() => setShowMembers(true)} className="shrink-0 -mr-2">
-          <Users className="h-5 w-5 text-muted-foreground" />
-        </Button>
       </header>
 
-      <Tabs defaultValue="itinerary" className="flex-1 flex flex-col min-h-0">
-        <TabsList className="w-full h-14 bg-white border-b rounded-none justify-between px-2 shrink-0 sticky top-14 z-10">
-          <TabsTrigger value="itinerary" className="flex-1 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none">📅 일정</TabsTrigger>
-          <TabsTrigger value="votes" className="flex-1 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none">🗳️ 투표</TabsTrigger>
-          <TabsTrigger value="budget" className="flex-1 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none">💰 예산</TabsTrigger>
-          <TabsTrigger value="threads" className="flex-1 rounded-none data-[state=active]:border-b-2 data-[state=active]:border-primary data-[state=active]:shadow-none">💬 채팅</TabsTrigger>
-        </TabsList>
-
-        <div className="flex-1 overflow-y-auto p-4 flex flex-col items-center">
-          <TabsContent value="itinerary" className="w-full m-0 h-full">
-            <ItineraryTab tripId={tripId as string} trip={trip} />
-          </TabsContent>
-          <TabsContent value="votes" className="w-full m-0 h-full">
-            <div className="text-center text-sm text-muted-foreground py-8">투표 컴포넌트 개발 예정</div>
-          </TabsContent>
-          <TabsContent value="budget" className="w-full m-0 h-full">
-            <div className="text-center text-sm text-muted-foreground py-8">예산 컴포넌트 개발 예정</div>
-          </TabsContent>
-          <TabsContent value="threads" className="w-full m-0 h-full flex flex-col">
-            <div className="text-center text-sm text-muted-foreground py-8">스레드 컴포넌트 개발 예정</div>
-          </TabsContent>
+      {/* Hero Section */}
+      <section className="px-4 mt-4 mb-6">
+        <div className="relative h-48 rounded-xl overflow-hidden shadow-md bg-gradient-to-br from-primary via-primary-container to-tertiary">
+          <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent" />
+          <span className="material-symbols-outlined absolute top-3 right-3 text-white/60 text-3xl">
+            flight_takeoff
+          </span>
+          <div className="absolute bottom-4 left-4 right-4">
+            {dLabel && (
+              <span className="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold uppercase tracking-wider">
+                {dLabel}
+              </span>
+            )}
+            <h2 className="text-white text-2xl font-bold mt-1.5 truncate drop-shadow-sm">
+              {trip.name}
+            </h2>
+            <p className="text-white/85 text-xs mt-0.5">
+              {trip.startDate} ~ {trip.endDate}
+            </p>
+          </div>
         </div>
-      </Tabs>
+      </section>
+
+      {/* Itinerary 본문 (탭 제거 — BottomNav로 통합) */}
+      <div className="px-4">
+        <ItineraryTab tripId={tripId as string} trip={trip} />
+      </div>
 
       <MembersDialog open={showMembers} onOpenChange={setShowMembers} trip={trip} />
+
+      {/* 하단 네비게이션 */}
+      <BottomNav />
     </div>
   );
 }
 
 export default function TripPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">로딩중...</div>}>
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
+          로딩중...
+        </div>
+      }
+    >
       <TripContent />
     </Suspense>
   );

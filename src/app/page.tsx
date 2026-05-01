@@ -9,8 +9,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { CreateTripDialog } from "@/components/CreateTripDialog";
-import { JoinTripDialog } from "@/components/JoinTripDialog";
-import { BottomNav } from "@/components/BottomNav";
 
 function diffDays(target: string) {
   // target: YYYY-MM-DD
@@ -41,7 +39,7 @@ function HomeContent() {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
-  const [joinOpen, setJoinOpen] = useState(false);
+  const [createDefaultMode, setCreateDefaultMode] = useState<"create" | "join">("create");
 
   // Dev login (visible only when running against the local emulator)
   const [isEmulator, setIsEmulator] = useState(false);
@@ -93,7 +91,8 @@ function HomeContent() {
       const key = `attemptedJoin_${urlJoinCode}`;
       if (!sessionStorage.getItem(key)) {
         sessionStorage.setItem(key, "true");
-        setJoinOpen(true);
+        setCreateDefaultMode("join");
+        setCreateOpen(true);
       }
     }
   }, [user, urlJoinCode]);
@@ -256,7 +255,7 @@ function HomeContent() {
       </header>
 
       {/* Main Content */}
-      <main className="flex-1 px-4 space-y-6 pb-24 pt-4">
+      <main className="flex-1 px-4 space-y-6 pb-28 pt-4">
         {/* Active Trip Cards */}
         {loadingTrips ? (
           <div className="text-center text-sm text-muted-foreground py-12">로딩중...</div>
@@ -322,34 +321,33 @@ function HomeContent() {
           </div>
         )}
 
-        {/* Quick Actions */}
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            onClick={() => setCreateOpen(true)}
-            className="glass-card p-4 rounded-xl flex flex-col items-center justify-center gap-2 aspect-square active:scale-[0.97] transition-transform"
-          >
-            <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-              <span className="material-symbols-outlined text-3xl">add_location_alt</span>
-            </div>
-            <span className="text-sm font-semibold text-on-surface">새 여행 만들기</span>
-          </button>
-          <button
-            onClick={() => setJoinOpen(true)}
-            className="glass-card p-4 rounded-xl flex flex-col items-center justify-center gap-2 aspect-square active:scale-[0.97] transition-transform"
-          >
-            <div className="h-12 w-12 rounded-full bg-tertiary/10 flex items-center justify-center text-tertiary">
-              <span className="material-symbols-outlined text-3xl">key</span>
-            </div>
-            <span className="text-sm font-semibold text-on-surface">여행 코드로 참가</span>
-          </button>
-        </div>
       </main>
 
-      <BottomNav />
+      {/* FAB: 새 여행 만들기 / 코드로 참가 */}
+      <button
+        type="button"
+        onClick={() => {
+          setCreateDefaultMode("create");
+          setCreateOpen(true);
+        }}
+        aria-label="새 여행"
+        className="fixed bottom-6 right-5 w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center active:scale-90 transition-transform z-30"
+      >
+        <span
+          className="material-symbols-outlined text-[28px]"
+          style={{ fontVariationSettings: "'FILL' 1" }}
+        >
+          add
+        </span>
+      </button>
 
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
-      <CreateTripDialog open={createOpen} onOpenChange={setCreateOpen} />
-      <JoinTripDialog open={joinOpen} onOpenChange={setJoinOpen} defaultCode={urlJoinCode || ""} />
+      <CreateTripDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        defaultMode={createDefaultMode}
+        defaultCode={urlJoinCode || ""}
+      />
     </div>
   );
 }

@@ -1,19 +1,32 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import { cn } from "@/lib/utils";
+
+export interface SwipeableItemHandle {
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  isOpen: () => boolean;
+}
 
 interface SwipeableItemProps {
   children: React.ReactNode;
   actions: React.ReactNode;
   actionWidth?: number; // Total width of the actions container
   disabled?: boolean;
+  /** Called whenever the open state changes (drag or imperative). */
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function SwipeableItem({
-  children,
-  actions,
-  actionWidth = 128,
-  disabled = false,
-}: SwipeableItemProps) {
+export const SwipeableItem = forwardRef<SwipeableItemHandle, SwipeableItemProps>(function SwipeableItem(
+  { children, actions, actionWidth = 128, disabled = false, onOpenChange },
+  ref
+) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [dragStartX, setDragStartX] = useState<number | null>(null);
   const [dragStartY, setDragStartY] = useState<number | null>(null);
@@ -22,17 +35,36 @@ export function SwipeableItem({
   const [isOpen, setIsOpen] = useState(false);
   const [isHorizontalDrag, setIsHorizontalDrag] = useState<boolean | null>(null);
 
+  const setOpenState = (next: boolean) => {
+    setIsOpen((prev) => {
+      if (prev !== next) onOpenChange?.(next);
+      return next;
+    });
+    setTranslateX(next ? -actionWidth : 0);
+  };
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      open: () => setOpenState(true),
+      close: () => setOpenState(false),
+      toggle: () => setOpenState(!isOpen),
+      isOpen: () => isOpen,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isOpen, actionWidth]
+  );
+
   // When clicking outside, close the swipe
   useEffect(() => {
     if (!isOpen) return;
-    
+
     const handleDocumentClick = (e: MouseEvent | TouchEvent) => {
       if (
         containerRef.current &&
         !containerRef.current.contains(e.target as Node)
       ) {
-        setIsOpen(false);
-        setTranslateX(0);
+        setOpenState(false);
       }
     };
 
@@ -40,16 +72,16 @@ export function SwipeableItem({
     return () => {
       document.removeEventListener("pointerdown", handleDocumentClick);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     if (disabled || (e.target as HTMLElement).closest("button, a")) return;
-    
-    // Support mouse drag and touch
+
     if (containerRef.current) {
       containerRef.current.setPointerCapture(e.pointerId);
     }
-    
+
     setDragStartX(e.clientX);
     setDragStartY(e.clientY);
     setIsDragging(true);
@@ -64,7 +96,6 @@ export function SwipeableItem({
     const diffX = currentX - dragStartX;
     const diffY = currentY - dragStartY;
 
-    // Determine if it's a horizontal drag or vertical scroll
     if (isHorizontalDrag === null) {
       if (Math.abs(diffY) > Math.abs(diffX)) {
         setIsHorizontalDrag(false);
@@ -75,7 +106,6 @@ export function SwipeableItem({
 
     if (!isHorizontalDrag) return;
 
-    // Calculate new translation
     const base = isOpen ? -actionWidth : 0;
     const newTranslate = Math.max(-actionWidth, Math.min(0, base + diffX));
     setTranslateX(newTranslate);
@@ -92,14 +122,11 @@ export function SwipeableItem({
     setDragStartX(null);
     setDragStartY(null);
 
-    // Snap to open or closed based on threshold
     const threshold = actionWidth / 2;
     if (translateX < -threshold) {
-      setIsOpen(true);
-      setTranslateX(-actionWidth);
+      setOpenState(true);
     } else {
-      setIsOpen(false);
-      setTranslateX(0);
+      setOpenState(false);
     }
   };
 
@@ -111,20 +138,16 @@ export function SwipeableItem({
     setIsDragging(false);
     setDragStartX(null);
     setDragStartY(null);
-    
-    if (isOpen) {
-      setTranslateX(-actionWidth);
-    } else {
-      setTranslateX(0);
-    }
+
+    setTranslateX(isOpen ? -actionWidth : 0);
   };
 
   return (
-    <div 
+    <div
       className="relative overflow-hidden rounded-xl touch-pan-y mb-2"
       ref={containerRef}
     >
-      <div 
+      <div
         className={cn(
           "relative z-10 w-full bg-transparent transition-transform duration-200 ease-out",
           isDragging && "transition-none"
@@ -137,12 +160,17 @@ export function SwipeableItem({
       >
         {children}
       </div>
-      <div 
-        className="absolute top-0 right-0 bottom-0 flex"
-        style={{ width: actionWidth }}
+      <div
+        className="absolute top-0 right-0 bottom-0 flex transition-opacity duration-150"
+        style={{
+          width: actionWidth,
+          opacity: translateX < 0 ? 1 : 0,
+          pointerEvents: translateX < 0 ? "auto" : "none",
+        }}
+        aria-hidden={translateX === 0}
       >
         {actions}
       </div>
     </div>
   );
-}
+});

@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html class="light" lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta content="width=device-width, initial-scale=1.0" name="viewport" />
+<title>Preview · 트립 일정 페이지</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
+<script>
+  tailwind.config = {
+    theme: {
+      extend: {
+        colors: {
+          primary: "#0a4c6e",
+          "primary-container": "#e0f2fe",
+          tertiary: "#7c3aed",
+          "tertiary-container": "#f5f3ff",
+          "on-surface": "#0f172a",
+          "on-surface-variant": "#64748b",
+        },
+        fontFamily: { sans: ["Inter"] },
+      },
+    },
+  };
+</script>
+<style>
+  body {
+    background: #f8fafc;
+    font-family: "Inter", sans-serif;
+    color: #0f172a;
+  }
+  .glass-panel {
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(125, 211, 252, 0.3);
+    box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05),
+      0 2px 4px -2px rgb(0 0 0 / 0.05);
+  }
+  .glass-elevated {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(125, 211, 252, 0.5);
+    box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1),
+      0 4px 6px -4px rgb(0 0 0 / 0.1);
+  }
+  .material-symbols-outlined {
+    font-variation-settings: "FILL" 0, "wght" 400, "GRAD" 0, "opsz" 24;
+  }
+  .wrapper {
+    max-width: 768px;
+    margin: 0 auto;
+    background: #f8fafc;
+    min-height: 100vh;
+    position: relative;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.04);
+  }
+</style>
+</head>
+<body class="pb-24">
+<div class="wrapper">
+  <!-- TopAppBar -->
+  <header class="h-14 bg-white/80 backdrop-blur-md border-b border-sky-100 flex items-center justify-between px-2 sticky top-0 z-30">
+    <button class="w-10 h-10 flex items-center justify-center text-primary hover:bg-sky-50 rounded-full transition-colors">
+      <span class="material-symbols-outlined">arrow_back</span>
+    </button>
+    <h1 class="text-base font-bold text-on-surface tracking-tight">내 일정</h1>
+    <button class="w-10 h-10 flex items-center justify-center text-primary hover:bg-sky-50 rounded-full transition-colors">
+      <span class="material-symbols-outlined">share</span>
+    </button>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="px-4 mt-4 mb-6">
+    <div class="relative h-48 rounded-xl overflow-hidden shadow-md"
+         style="background: linear-gradient(135deg, #0a4c6e, #e0f2fe, #7c3aed);">
+      <div class="absolute inset-0" style="background: linear-gradient(to top, rgba(0,0,0,0.6), transparent);"></div>
+      <span class="material-symbols-outlined absolute top-3 right-3 text-white/60 text-3xl">flight_takeoff</span>
+      <div class="absolute bottom-4 left-4 right-4">
+        <span class="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold uppercase tracking-wider">D-23</span>
+        <h2 class="text-white text-2xl font-bold mt-1.5 truncate" style="text-shadow: 0 1px 2px rgba(0,0,0,0.3);">제주 여행</h2>
+        <p class="text-white/85 text-xs mt-0.5">2026-05-24 ~ 2026-05-27</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Day 섹션들 -->
+  <main class="px-4 pb-32">
+
+    <!-- Day 1 -->
+    <section class="mb-8">
+      <div class="text-sm font-bold mb-3 flex items-center justify-between">
+        <span class="text-primary">Day 1 · 5월 24일 (토)</span>
+        <span class="text-[11px] font-medium text-on-surface-variant">2개</span>
+      </div>
+      <div class="space-y-2">
+        <!-- Card 1: 시간 있음 -->
+        <div class="glass-panel p-4 rounded-xl flex items-start gap-3">
+          <div class="flex-shrink-0 w-12 h-12 flex flex-col items-center justify-center rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+            <span class="text-[9px] font-bold uppercase leading-none">MAY</span>
+            <span class="text-lg font-extrabold leading-none mt-0.5">24</span>
+          </div>
+          <div class="flex-grow min-w-0">
+            <h3 class="font-semibold text-on-surface leading-tight truncate">인천공항 출발</h3>
+            <p class="text-xs text-on-surface-variant mt-1">
+              <span class="font-medium text-on-surface">09:00</span>
+            </p>
+            <div class="text-[13px] text-on-surface-variant mt-1.5 flex items-start gap-1">
+              <span class="material-symbols-outlined text-[14px] mt-0.5">location_on</span>
+              <span>인천국제공항 제2터미널</span>
+            </div>
+          </div>
+          <button class="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary rounded-full">
+            <span class="material-symbols-outlined text-[20px]">more_vert</span>
+          </button>
+        </div>
+
+        <!-- Card 2: 시간 있음 -->
+        <div class="glass-panel p-4 rounded-xl flex items-start gap-3">
+          <div class="flex-shrink-0 w-12 h-12 flex flex-col items-center justify-center rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+            <span class="text-[9px] font-bold uppercase leading-none">MAY</span>
+            <span class="text-lg font-extrabold leading-none mt-0.5">24</span>
+          </div>
+          <div class="flex-grow min-w-0">
+            <h3 class="font-semibold text-on-surface leading-tight truncate">마티나 라운지</h3>
+            <p class="text-xs text-on-surface-variant mt-1">
+              <span class="font-medium text-on-surface">09:30</span>
+            </p>
+          </div>
+          <button class="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary rounded-full">
+            <span class="material-symbols-outlined text-[20px]">more_vert</span>
+          </button>
+        </div>
+      </div>
+      <button class="mt-2 w-full py-2.5 border border-dashed border-sky-200 rounded-xl text-sm text-on-surface-variant hover:border-primary hover:text-primary flex items-center justify-center gap-1 bg-white/40">
+        <span class="material-symbols-outlined text-[18px]">add</span>일정 추가
+      </button>
+    </section>
+
+    <!-- Day 2 -->
+    <section class="mb-8">
+      <div class="text-sm font-bold mb-3 flex items-center justify-between">
+        <span class="text-primary">Day 2 · 5월 25일 (일)</span>
+        <span class="text-[11px] font-medium text-on-surface-variant">2개</span>
+      </div>
+      <div class="space-y-2">
+        <!-- Card with note -->
+        <div class="glass-panel p-4 rounded-xl flex items-start gap-3">
+          <div class="flex-shrink-0 w-12 h-12 flex flex-col items-center justify-center rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+            <span class="text-[9px] font-bold uppercase leading-none">MAY</span>
+            <span class="text-lg font-extrabold leading-none mt-0.5">25</span>
+          </div>
+          <div class="flex-grow min-w-0">
+            <h3 class="font-semibold text-on-surface leading-tight truncate">우도 여행 &amp; 점심식사</h3>
+            <p class="text-xs text-on-surface-variant mt-1">
+              <span class="font-medium text-on-surface">11:00</span>
+            </p>
+            <div class="text-[13px] text-on-surface-variant mt-1.5 flex items-start gap-1">
+              <span class="material-symbols-outlined text-[14px] mt-0.5">location_on</span>
+              <span>성산포항 종합여객터미널</span>
+            </div>
+          </div>
+          <button class="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary rounded-full">
+            <span class="material-symbols-outlined text-[20px]">more_vert</span>
+          </button>
+        </div>
+
+        <!-- Card without time -->
+        <div class="glass-panel p-4 rounded-xl flex items-start gap-3">
+          <div class="flex-shrink-0 w-12 h-12 flex flex-col items-center justify-center rounded-lg border bg-slate-50 text-slate-600 border-slate-200">
+            <span class="text-[9px] font-bold uppercase leading-none">MAY</span>
+            <span class="text-lg font-extrabold leading-none mt-0.5">25</span>
+          </div>
+          <div class="flex-grow min-w-0">
+            <h3 class="font-semibold text-on-surface leading-tight truncate">숙소 체크인</h3>
+          </div>
+          <button class="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary rounded-full">
+            <span class="material-symbols-outlined text-[20px]">more_vert</span>
+          </button>
+        </div>
+      </div>
+      <button class="mt-2 w-full py-2.5 border border-dashed border-sky-200 rounded-xl text-sm text-on-surface-variant hover:border-primary hover:text-primary flex items-center justify-center gap-1 bg-white/40">
+        <span class="material-symbols-outlined text-[18px]">add</span>일정 추가
+      </button>
+    </section>
+
+    <!-- Day 3 (오늘 날짜 강조 예시) -->
+    <section class="mb-8">
+      <div class="text-sm font-bold mb-3 flex items-center justify-between">
+        <span class="text-tertiary">
+          <span class="inline-block w-1.5 h-1.5 rounded-full bg-tertiary mr-1.5 align-middle" style="animation: pulse 2s infinite;"></span>
+          Day 3 · 5월 26일 (월)
+        </span>
+        <span class="text-[11px] font-medium text-on-surface-variant">1개</span>
+      </div>
+      <div class="space-y-2">
+        <div class="glass-elevated p-4 rounded-xl flex items-start gap-3">
+          <div class="flex-shrink-0 w-12 h-12 flex flex-col items-center justify-center rounded-lg border bg-violet-50 text-violet-700 border-violet-200">
+            <span class="text-[9px] font-bold uppercase leading-none">MAY</span>
+            <span class="text-lg font-extrabold leading-none mt-0.5">26</span>
+          </div>
+          <div class="flex-grow min-w-0">
+            <h3 class="font-semibold text-on-surface leading-tight truncate">카멜리아 힐 투어</h3>
+            <div class="text-[13px] text-on-surface-variant mt-1.5 flex items-start gap-1">
+              <span class="material-symbols-outlined text-[14px] mt-0.5">location_on</span>
+              <span>서귀포시 안덕면</span>
+            </div>
+          </div>
+          <button class="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary rounded-full">
+            <span class="material-symbols-outlined text-[20px]">more_vert</span>
+          </button>
+        </div>
+      </div>
+      <button class="mt-2 w-full py-2.5 border border-dashed border-sky-200 rounded-xl text-sm text-on-surface-variant hover:border-primary hover:text-primary flex items-center justify-center gap-1 bg-white/40">
+        <span class="material-symbols-outlined text-[18px]">add</span>일정 추가
+      </button>
+    </section>
+  </main>
+
+  <!-- Bottom Navigation (실제 컴포넌트와 동일) -->
+  <nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-white/90 backdrop-blur-xl border-t border-sky-100 rounded-t-2xl"
+       style="box-shadow: 0 -4px 12px rgba(0,0,0,0.05); max-width: 768px; left: 50%; transform: translateX(-50%);">
+    <a href="#" class="flex flex-col items-center justify-center px-4 py-1.5 rounded-full text-slate-400 hover:text-primary transition-colors">
+      <span class="material-symbols-outlined">home</span>
+      <span class="text-[10px] font-medium font-sans">홈</span>
+    </a>
+    <a href="#" class="flex flex-col items-center justify-center px-4 py-1.5 rounded-full text-primary bg-sky-50">
+      <span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">map</span>
+      <span class="text-[10px] font-semibold font-sans">일정</span>
+    </a>
+    <a href="#" class="flex flex-col items-center justify-center px-4 py-1.5 rounded-full text-slate-400 hover:text-primary transition-colors">
+      <span class="material-symbols-outlined">payments</span>
+      <span class="text-[10px] font-medium font-sans">정산</span>
+    </a>
+    <a href="#" class="flex flex-col items-center justify-center px-4 py-1.5 rounded-full text-slate-400 hover:text-primary transition-colors">
+      <span class="material-symbols-outlined">forum</span>
+      <span class="text-[10px] font-medium font-sans">스레드</span>
+    </a>
+  </nav>
+</div>
+</body>
+</html>
