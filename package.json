@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "emulator": "firebase emulators:start --import=./emulator_data --export-on-exit=./emulator_data"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
