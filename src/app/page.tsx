@@ -3,7 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect, Suspense } from "react";
 import { db } from "@/lib/firebase";
-import { collection, query, where, getDocs, getDoc, doc } from "firebase/firestore";
+import { collection, query, where, onSnapshot, getDoc, doc } from "firebase/firestore";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -36,6 +36,7 @@ function HomeContent() {
   const [trips, setTrips] = useState<any[]>([]);
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [loadingTrips, setLoadingTrips] = useState(false);
+  const [memberPhotos, setMemberPhotos] = useState<Record<string, string | null>>({});
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
@@ -66,8 +67,72 @@ function HomeContent() {
   };
 
   useEffect(() => {
-    if (user) loadTrips();
+    if (!user) {
+      setTrips([]);
+      setLoadingTrips(false);
+      return;
+    }
+    setLoadingTrips(true);
+    const q = query(collection(db, "trips"), where("memberUids", "array-contains", user.uid));
+    const unsubscribe = onSnapshot(
+      q,
+      (snap) => {
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+        // Sort: upcoming first (closest startDate), then ongoing, then past
+        docs.sort((a: any, b: any) => {
+          const da = diffDays(a.startDate || "");
+          const dEa = diffDays(a.endDate || a.startDate || "");
+          const db_ = diffDays(b.startDate || "");
+          const dEb = diffDays(b.endDate || b.startDate || "");
+          const score = (start: number, end: number) => {
+            if (start > 0) return start; // upcoming: positive small first
+            if (end >= 0) return -1000 + start; // ongoing: very high priority
+            return 100000 - start; // past: most recent past first (less negative)
+          };
+          return score(da, dEa) - score(db_, dEb);
+        });
+        setTrips(docs);
+        setLoadingTrips(false);
+      },
+      (error) => {
+        console.error(error);
+        toast.error("여행 목록을 불러오지 못했습니다.");
+        setLoadingTrips(false);
+      }
+    );
+    return () => unsubscribe();
   }, [user]);
+
+  // Load photoURL for every member shown in trip cards
+  useEffect(() => {
+    if (!trips.length) {
+      setMemberPhotos({});
+      return;
+    }
+    const uids = new Set<string>();
+    trips.forEach((t) => {
+      Object.keys(t.members || {}).forEach((uid) => uids.add(uid));
+    });
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        Array.from(uids).map(async (uid) => {
+          try {
+            const snap = await getDoc(doc(db, "userProfiles", uid));
+            const url = snap.exists() ? (snap.data()?.photoURL ?? null) : null;
+            return [uid, url] as const;
+          } catch {
+            return [uid, null] as const;
+          }
+        })
+      );
+      if (cancelled) return;
+      setMemberPhotos(Object.fromEntries(entries));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [trips]);
 
   useEffect(() => {
     if (!user) {
@@ -96,35 +161,6 @@ function HomeContent() {
       }
     }
   }, [user, urlJoinCode]);
-
-  const loadTrips = async () => {
-    if (!user) return;
-    setLoadingTrips(true);
-    try {
-      const q = query(collection(db, "trips"), where("memberUids", "array-contains", user.uid));
-      const snap = await getDocs(q);
-      const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
-      // Sort: upcoming first (closest startDate), then ongoing, then past
-      docs.sort((a: any, b: any) => {
-        const da = diffDays(a.startDate || "");
-        const dEa = diffDays(a.endDate || a.startDate || "");
-        const db_ = diffDays(b.startDate || "");
-        const dEb = diffDays(b.endDate || b.startDate || "");
-        const score = (start: number, end: number) => {
-          if (start > 0) return start; // upcoming: positive small first
-          if (end >= 0) return -1000 + start; // ongoing: very high priority
-          return 100000 - start; // past: most recent past first (less negative)
-        };
-        return score(da, dEa) - score(db_, dEb);
-      });
-      setTrips(docs);
-    } catch (error) {
-      console.error(error);
-      toast.error("여행 목록을 불러오지 못했습니다.");
-    } finally {
-      setLoadingTrips(false);
-    }
-  };
 
   // ----------- Logged-out: Login screen -----------
   if (loading) {
@@ -294,16 +330,25 @@ function HomeContent() {
                   </div>
                   <div className="p-4 flex justify-between items-center bg-white/60">
                     <div className="flex -space-x-2">
-                      {memberEntries.map(([uid, name], idx) => (
-                        <div
-                          key={uid}
-                          className={`h-8 w-8 rounded-full border-2 border-white flex items-center justify-center text-[10px] font-medium ${
-                            idx === 0 ? "bg-primary/20 text-primary" : idx === 1 ? "bg-tertiary/20 text-tertiary" : "bg-slate-200 text-slate-600"
-                          }`}
-                        >
-                          {String(name).charAt(0)}
-                        </div>
-                      ))}
+                      {memberEntries.map(([uid, name], idx) => {
+                        const photo = memberPhotos[uid];
+                        const fallbackBg =
+                          idx === 0
+                            ? "bg-primary/20 text-primary"
+                            : idx === 1
+                            ? "bg-tertiary/20 text-tertiary"
+                            : "bg-slate-200 text-slate-600";
+                        return (
+                          <Avatar key={uid} className="h-8 w-8 border-2 border-white">
+                            {photo ? (
+                              <AvatarImage src={photo} className="object-cover" />
+                            ) : null}
+                            <AvatarFallback className={`text-[10px] font-medium ${fallbackBg}`}>
+                              {String(name).charAt(0)}
+                            </AvatarFallback>
+                          </Avatar>
+                        );
+                      })}
                       {memberCount > 3 && (
                         <div className="h-8 w-8 rounded-full border-2 border-white bg-slate-200 flex items-center justify-center text-[10px] text-slate-600 font-medium">
                           +{memberCount - 3}

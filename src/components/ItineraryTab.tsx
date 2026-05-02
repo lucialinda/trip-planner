@@ -362,7 +362,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                 return (
                   <SwipeableItem
                     key={place.id}
-                    actionWidth={130}
+                    actionWidth={120}
                     ref={(handle) => {
                       if (handle) {
                         swipeRefs.current.set(place.id, handle);
@@ -374,26 +374,32 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                       if (open) closeAllSwipes(place.id);
                     }}
                     actions={
-                      <div className="flex w-full h-full mb-2 rounded-r-xl overflow-hidden ml-1 shadow-sm">
+                      <div className="flex w-full h-full items-center justify-center gap-2 pl-2 pr-1">
                         <button
                           type="button"
+                          aria-label="수정"
                           onClick={() => {
                             swipeRefs.current.get(place.id)?.close();
                             openEditModal(place);
                           }}
-                          className="flex-1 bg-primary text-white text-xs font-bold transition-colors hover:bg-primary/90"
+                          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/60 text-slate-700 shadow-[0_4px_12px_-2px_rgba(30,41,59,0.25)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/80 hover:text-slate-900 active:scale-95"
                         >
-                          수정
+                          <span className="material-symbols-outlined text-[20px] leading-none">
+                            edit
+                          </span>
                         </button>
                         <button
                           type="button"
+                          aria-label="삭제"
                           onClick={() => {
                             swipeRefs.current.get(place.id)?.close();
                             handleDelete(place.id);
                           }}
-                          className="flex-1 bg-red-500 text-white text-xs font-bold transition-colors hover:bg-red-600"
+                          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-200/70 bg-rose-50/70 text-rose-500 shadow-[0_4px_12px_-2px_rgba(244,63,94,0.25)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-rose-100/80 hover:text-rose-600 active:scale-95"
                         >
-                          삭제
+                          <span className="material-symbols-outlined text-[20px] leading-none">
+                            delete
+                          </span>
                         </button>
                       </div>
                     }
