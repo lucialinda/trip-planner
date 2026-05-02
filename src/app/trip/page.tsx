@@ -1,19 +1,16 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { useEffect, useRef, useState, Suspense } from "react";
-import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
-import { db, storage } from "@/lib/firebase";
+import { useEffect, useState, Suspense } from "react";
+import { doc, onSnapshot } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
-  Camera,
   ChevronLeft,
   Share2,
   Link as LinkIcon,
   Copy,
   Share,
-  Trash2,
   Users,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -27,7 +24,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ItineraryTab } from "@/components/ItineraryTab";
 import { BottomNav } from "@/components/BottomNav";
-import { TripHeroCropDialog } from "@/components/TripHeroCropDialog";
 
 interface TripData {
   id: string;
@@ -65,11 +61,6 @@ function TripContent() {
   const [loading, setLoading] = useState(true);
   const [showMembers, setShowMembers] = useState(false);
 
-  // 히어로 사진 편집 상태
-  const heroFileInputRef = useRef<HTMLInputElement | null>(null);
-  const [pendingHeroFile, setPendingHeroFile] = useState<File | null>(null);
-  const [savingHero, setSavingHero] = useState(false);
-
   useEffect(() => {
     if (!user || !tripId) {
       if (!tripId && !loading) router.push("/");
@@ -89,60 +80,6 @@ function TripContent() {
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId, user, router]);
-
-  const canEditHero =
-    !!user && !!trip && (!trip.createdByUid || trip.createdByUid === user.uid);
-
-  const handleHeroPickClick = () => {
-    heroFileInputRef.current?.click();
-  };
-
-  const handleHeroFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    if (!file.type.startsWith("image/")) {
-      toast.error("이미지 파일만 업로드 가능합니다.");
-      return;
-    }
-    if (file.size > 8 * 1024 * 1024) {
-      toast.error("원본 이미지는 8MB 이하로 선택해주세요.");
-      return;
-    }
-    setPendingHeroFile(file);
-  };
-
-  const handleHeroCropConfirm = async (blob: Blob) => {
-    if (!trip || !user) return;
-    setSavingHero(true);
-    try {
-      const fileRef = storageRef(storage, `trip-hero/${trip.id}/cover.jpg`);
-      await uploadBytes(fileRef, blob, { contentType: "image/jpeg" });
-      const url = await getDownloadURL(fileRef);
-      await updateDoc(doc(db, "trips", trip.id), { heroPhotoURL: url });
-      toast.success("대표 사진이 변경되었어요");
-      setPendingHeroFile(null);
-    } catch (error: unknown) {
-      console.error(error);
-      const message = error instanceof Error ? error.message : "알 수 없는 오류";
-      toast.error(`사진 저장 실패: ${message}`);
-    } finally {
-      setSavingHero(false);
-    }
-  };
-
-  const handleHeroDelete = async () => {
-    if (!trip) return;
-    if (!confirm("대표 사진을 삭제할까요?")) return;
-    try {
-      await updateDoc(doc(db, "trips", trip.id), { heroPhotoURL: null });
-      toast.success("대표 사진을 삭제했어요");
-    } catch (error: unknown) {
-      console.error(error);
-      const message = error instanceof Error ? error.message : "알 수 없는 오류";
-      toast.error(`삭제 실패: ${message}`);
-    }
-  };
 
   const handleCopyLink = async () => {
     const code = trip?.code || "";
@@ -264,8 +201,8 @@ function TripContent() {
             }`}
           />
 
-          {/* 하단 텍스트 + 편집 버튼 */}
-          <div className="absolute bottom-4 left-4 right-4 flex items-end justify-between gap-3">
+          {/* 하단 텍스트 */}
+          <div className="absolute bottom-4 left-4 right-4">
             <div className="min-w-0">
               {dLabel && (
                 <span className="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold uppercase tracking-wider">
@@ -279,53 +216,9 @@ function TripContent() {
                 {trip.startDate} ~ {trip.endDate}
               </p>
             </div>
-
-            {/* 생성자만 보이는 사진 변경/삭제 글래스 버튼 */}
-            {canEditHero && (
-              <div className="flex gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleHeroPickClick}
-                  aria-label="대표 사진 변경"
-                  className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
-                >
-                  <Camera className="h-4 w-4" />
-                </button>
-                {trip.heroPhotoURL && (
-                  <button
-                    type="button"
-                    onClick={handleHeroDelete}
-                    aria-label="대표 사진 삭제"
-                    className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-rose-500/40 active:scale-95"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                )}
-              </div>
-            )}
           </div>
-
-          {/* 숨김 파일 인풋 */}
-          {canEditHero && (
-            <input
-              ref={heroFileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handleHeroFileChange}
-            />
-          )}
         </div>
       </section>
-
-      {/* 크롭 다이얼로그 */}
-      <TripHeroCropDialog
-        open={!!pendingHeroFile}
-        file={pendingHeroFile}
-        saving={savingHero}
-        onCancel={() => !savingHero && setPendingHeroFile(null)}
-        onConfirm={handleHeroCropConfirm}
-      />
 
       {/* Itinerary 본문 (탭 제거 — BottomNav로 통합) */}
       <div className="px-4">

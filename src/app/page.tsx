@@ -1,14 +1,29 @@
 "use client";
 
 import { useAuth } from "@/contexts/AuthContext";
-import { useState, useEffect, Suspense } from "react";
-import { db } from "@/lib/firebase";
-import { collection, query, where, onSnapshot, getDoc, doc } from "firebase/firestore";
+import { useState, useEffect, Suspense, useRef } from "react";
+import { db, storage } from "@/lib/firebase";
+import { collection, query, where, onSnapshot, getDoc, doc, updateDoc } from "firebase/firestore";
+import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { CreateTripDialog } from "@/components/CreateTripDialog";
+import { TripHeroCropDialog } from "@/components/TripHeroCropDialog";
+import { Camera, Trash2 } from "lucide-react";
+
+interface TripSummary {
+  id: string;
+  name?: string;
+  startDate?: string;
+  endDate?: string;
+  members?: Record<string, string>;
+  memberUids?: string[];
+  createdByUid?: string;
+  heroPhotoURL?: string | null;
+  [key: string]: unknown;
+}
 
 function diffDays(target: string) {
   // target: YYYY-MM-DD
@@ -18,7 +33,7 @@ function diffDays(target: string) {
   return Math.round((t.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function dDayLabel(startDate: string, endDate: string) {
+function dDayLabel(startDate?: string, endDate?: string) {
   if (!startDate) return "";
   const dStart = diffDays(startDate);
   const dEnd = endDate ? diffDays(endDate) : dStart;
@@ -33,7 +48,7 @@ function HomeContent() {
   const searchParams = useSearchParams();
   const urlJoinCode = searchParams.get("joinCode");
 
-  const [trips, setTrips] = useState<any[]>([]);
+  const [trips, setTrips] = useState<TripSummary[]>([]);
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
   const [loadingTrips, setLoadingTrips] = useState(false);
   const [memberPhotos, setMemberPhotos] = useState<Record<string, string | null>>({});
@@ -41,6 +56,10 @@ function HomeContent() {
   const [profileOpen, setProfileOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [createDefaultMode, setCreateDefaultMode] = useState<"create" | "join">("create");
+  const heroFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [editingHeroTrip, setEditingHeroTrip] = useState<TripSummary | null>(null);
+  const [pendingHeroFile, setPendingHeroFile] = useState<File | null>(null);
+  const [savingHero, setSavingHero] = useState(false);
 
   // Dev login (visible only when running against the local emulator)
   const [isEmulator, setIsEmulator] = useState(false);
@@ -59,8 +78,9 @@ function HomeContent() {
     try {
       await loginWithEmail(devEmail, devPassword);
       toast.success("로그인 완료");
-    } catch (error: any) {
-      toast.error(`로그인 실패: ${error?.message || error?.code || "unknown"}`);
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : "unknown";
+      toast.error(`로그인 실패: ${message}`);
     } finally {
       setDevLoggingIn(false);
     }
@@ -77,9 +97,9 @@ function HomeContent() {
     const unsubscribe = onSnapshot(
       q,
       (snap) => {
-        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as any));
+        const docs = snap.docs.map((d) => ({ id: d.id, ...d.data() } as TripSummary));
         // Sort: upcoming first (closest startDate), then ongoing, then past
-        docs.sort((a: any, b: any) => {
+        docs.sort((a, b) => {
           const da = diffDays(a.startDate || "");
           const dEa = diffDays(a.endDate || a.startDate || "");
           const db_ = diffDays(b.startDate || "");
@@ -161,6 +181,78 @@ function HomeContent() {
       }
     }
   }, [user, urlJoinCode]);
+
+  const handleTripCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, tripId: string) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    router.push(`/trip?id=${tripId}`);
+  };
+
+  const handleHeroPickClick = (
+    e: React.MouseEvent<HTMLButtonElement>,
+    trip: TripSummary
+  ) => {
+    e.stopPropagation();
+    setEditingHeroTrip(trip);
+    heroFileInputRef.current?.click();
+  };
+
+  const handleHeroFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast.error("이미지 파일만 업로드 가능합니다.");
+      return;
+    }
+    if (file.size > 8 * 1024 * 1024) {
+      toast.error("원본 이미지는 8MB 이하로 선택해주세요.");
+      return;
+    }
+    setPendingHeroFile(file);
+  };
+
+  const handleHeroCropConfirm = async (blob: Blob) => {
+    if (!editingHeroTrip || !user) return;
+    setSavingHero(true);
+    try {
+      const fileRef = storageRef(storage, `trip-hero/${editingHeroTrip.id}/cover.jpg`);
+      await uploadBytes(fileRef, blob, { contentType: "image/jpeg" });
+      const url = await getDownloadURL(fileRef);
+      await updateDoc(doc(db, "trips", editingHeroTrip.id), { heroPhotoURL: url });
+      toast.success("대표 사진이 변경되었어요");
+      setPendingHeroFile(null);
+      setEditingHeroTrip(null);
+    } catch (error: unknown) {
+      console.error(error);
+      const message = error instanceof Error ? error.message : "알 수 없는 오류";
+      toast.error(`사진 저장 실패: ${message}`);
+    } finally {
+      setSavingHero(false);
+    }
+  };
+
+  const handleHeroCropCancel = () => {
+    if (savingHero) return;
+    setPendingHeroFile(null);
+    setEditingHeroTrip(null);
+  };
+
+  const handleHeroDelete = async (
+    e: React.MouseEvent<HTMLButtonElement>,
+    trip: TripSummary
+  ) => {
+    e.stopPropagation();
+    if (!confirm("대표 사진을 삭제할까요?")) return;
+    try {
+      await updateDoc(doc(db, "trips", trip.id), { heroPhotoURL: null });
+      toast.success("대표 사진을 삭제했어요");
+    } catch (error: unknown) {
+      console.error(error);
+      const message = error instanceof Error ? error.message : "알 수 없는 오류";
+      toast.error(`삭제 실패: ${message}`);
+    }
+  };
 
   // ----------- Logged-out: Login screen -----------
   if (loading) {
@@ -308,10 +400,13 @@ function HomeContent() {
               const memberCount = Object.keys(t.members || {}).length;
               const memberEntries = Object.entries(t.members || {}).slice(0, 3) as [string, string][];
               return (
-                <button
+                <div
                   key={t.id}
                   onClick={() => router.push(`/trip?id=${t.id}`)}
-                  className="glass-card rounded-xl overflow-hidden block w-full text-left active:scale-[0.99] transition-transform"
+                  onKeyDown={(e) => handleTripCardKeyDown(e, t.id)}
+                  role="button"
+                  tabIndex={0}
+                  className="glass-card block w-full cursor-pointer overflow-hidden rounded-xl text-left transition-transform active:scale-[0.99]"
                 >
                   <div
                     className={`relative w-full ${
@@ -347,6 +442,28 @@ function HomeContent() {
                         {t.startDate} ~ {t.endDate}
                       </p>
                     </div>
+                    {(!t.createdByUid || t.createdByUid === user.uid) && (
+                      <div className="absolute right-4 top-4 flex shrink-0 gap-1.5">
+                        <button
+                          type="button"
+                          onClick={(e) => handleHeroPickClick(e, t)}
+                          aria-label="대표 사진 변경"
+                          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
+                        >
+                          <Camera className="h-4 w-4" />
+                        </button>
+                        {t.heroPhotoURL && (
+                          <button
+                            type="button"
+                            onClick={(e) => handleHeroDelete(e, t)}
+                            aria-label="대표 사진 삭제"
+                            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-rose-500/40 active:scale-95"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="p-4 flex justify-between items-center bg-white/60">
                     <div className="flex -space-x-2">
@@ -380,7 +497,7 @@ function HomeContent() {
                       <span className="material-symbols-outlined text-base">chevron_right</span>
                     </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>
@@ -409,6 +526,20 @@ function HomeContent() {
       </div>
 
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <input
+        ref={heroFileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleHeroFileChange}
+      />
+      <TripHeroCropDialog
+        open={!!pendingHeroFile}
+        file={pendingHeroFile}
+        saving={savingHero}
+        onCancel={handleHeroCropCancel}
+        onConfirm={handleHeroCropConfirm}
+      />
       <CreateTripDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
