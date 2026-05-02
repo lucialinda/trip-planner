@@ -28,6 +28,18 @@ service cloud.firestore {
         && request.resource.data.members[request.auth.uid] is string;
     }
 
+    // heroPhotoURL 변경 시: 생성자(createdByUid) 본인이거나, 기존 trip이라
+    // createdByUid 필드가 아예 없는 경우(=하위 호환)에만 허용
+    function canChangeHeroPhoto() {
+      return signedIn()
+        && request.auth.uid in resource.data.memberUids
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['heroPhotoURL'])
+        && (
+          !('createdByUid' in resource.data)
+          || resource.data.createdByUid == request.auth.uid
+        );
+    }
+
     function isPlaceAuthor() {
       return signedIn()
         && resource.data.addedByUid == request.auth.uid;
@@ -72,13 +84,19 @@ service cloud.firestore {
 
       allow create: if signedIn()
         && request.auth.uid in request.resource.data.memberUids
-        && request.resource.data.members[request.auth.uid] is string;
-
-      allow update: if signedIn()
+        && request.resource.data.members[request.auth.uid] is string
         && (
-          request.auth.uid in resource.data.memberUids
-          || isJoiningSelf(tripId)
+          !('createdByUid' in request.resource.data)
+          || request.resource.data.createdByUid == request.auth.uid
         );
+
+      allow update: if isJoiningSelf(tripId)
+        || (
+          signedIn()
+          && request.auth.uid in resource.data.memberUids
+          && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['heroPhotoURL', 'createdByUid'])
+        )
+        || canChangeHeroPhoto();
 
       allow delete: if false;
 

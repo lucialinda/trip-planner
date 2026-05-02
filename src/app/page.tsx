@@ -313,17 +313,37 @@ function HomeContent() {
                   onClick={() => router.push(`/trip?id=${t.id}`)}
                   className="glass-card rounded-xl overflow-hidden block w-full text-left active:scale-[0.99] transition-transform"
                 >
-                  <div className="relative h-40 w-full bg-gradient-to-br from-primary via-primary-container to-tertiary">
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-                    <span className="material-symbols-outlined absolute top-3 right-3 text-white/60 text-3xl">
-                      flight_takeoff
-                    </span>
+                  <div
+                    className={`relative w-full ${
+                      t.heroPhotoURL ? "" : "bg-gradient-to-br from-primary via-primary-container to-tertiary"
+                    }`}
+                    style={{ aspectRatio: "2 / 1" }}
+                  >
+                    {t.heroPhotoURL ? (
+                      <img
+                        src={t.heroPhotoURL}
+                        alt={t.name || "여행 대표 사진"}
+                        className="absolute inset-0 w-full h-full object-cover"
+                      />
+                    ) : (
+                      <span className="material-symbols-outlined absolute top-3 right-3 text-white/60 text-3xl">
+                        flight_takeoff
+                      </span>
+                    )}
+                    {/* 텍스트 가독용 어두운 그라디언트 */}
+                    <div
+                      className={`absolute inset-0 ${
+                        t.heroPhotoURL
+                          ? "bg-gradient-to-t from-black/65 via-black/15 to-black/25"
+                          : "bg-gradient-to-t from-black/60 to-transparent"
+                      }`}
+                    />
                     <div className="absolute bottom-4 left-4 right-4">
                       <span className="px-2 py-1 rounded bg-primary text-white text-[10px] font-bold uppercase tracking-wider">
                         {dLabel}
                       </span>
-                      <h3 className="text-white text-xl font-bold mt-1 truncate">{t.name}</h3>
-                      <p className="text-white/80 text-xs mt-0.5">
+                      <h3 className="text-white text-xl font-bold mt-1 truncate drop-shadow-sm">{t.name}</h3>
+                      <p className="text-white/85 text-xs mt-0.5">
                         {t.startDate} ~ {t.endDate}
                       </p>
                     </div>

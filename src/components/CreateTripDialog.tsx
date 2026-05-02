@@ -95,6 +95,7 @@ export function CreateTripDialog({
         code: newCode,
         members: { [user.uid]: user.displayName || "익명" },
         memberUids: [user.uid],
+        createdByUid: user.uid,
         createdAt: serverTimestamp(),
       });
       await setDoc(doc(db, "tripCodes", newCode), {
