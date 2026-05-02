@@ -104,13 +104,13 @@ service cloud.firestore {
         allow read: if isTripMember(tripId);
         allow create: if isTripMember(tripId)
           && isOwnPlaceCreate()
-          && request.resource.data.keys().hasOnly(['name', 'date', 'time', 'note', 'addedBy', 'addedByUid', 'likes', 'dislikes', 'createdAt']);
+          && request.resource.data.keys().hasOnly(['name', 'date', 'time', 'startTime', 'endTime', 'placeUrl', 'note', 'addedBy', 'addedByUid', 'likes', 'dislikes', 'createdAt']);
         allow update: if isTripMember(tripId)
           && (
             (
               isPlaceAuthor()
               && request.resource.data.addedByUid == resource.data.addedByUid
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'time', 'note'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'time', 'startTime', 'endTime', 'placeUrl', 'note'])
             )
             || isOwnPlaceVote()
           );

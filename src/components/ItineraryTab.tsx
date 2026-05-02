@@ -26,12 +26,16 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Linkify from "linkify-react";
+import { Edit2, MapPin, Trash2 } from "lucide-react";
 
 interface Place {
   id: string;
   name: string;
   date: string; // YYYY-MM-DD
+  startTime?: string;
+  endTime?: string;
   time?: string;
+  placeUrl?: string;
   note?: string;
   addedBy: string;
   addedByUid: string;
@@ -50,6 +54,11 @@ interface ItineraryTabProps {
     [key: string]: unknown;
   };
 }
+
+const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0"));
+const FIVE_MINUTE_OPTIONS = Array.from({ length: 12 }, (_, i) =>
+  String(i * 5).padStart(2, "0")
+);
 
 function dateRange(start: string, end: string) {
   const dates: string[] = [];
@@ -85,18 +94,317 @@ function todayIso() {
   return d.toISOString().split("T")[0];
 }
 
+function placeStartTime(place: Place) {
+  return (place.startTime || place.time || "").trim();
+}
+
+function placeEndTime(place: Place) {
+  return (place.endTime || "").trim();
+}
+
+function formatPlaceTime(place: Place) {
+  const startTime = placeStartTime(place);
+  const endTime = placeEndTime(place);
+  if (startTime && endTime) return `${startTime} ~ ${endTime}`;
+  if (startTime) return startTime;
+  if (endTime) return `종료 ${endTime}`;
+  return "";
+}
+
+function isCompleteTime(value: string) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
+}
+
+function normalizeExternalUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+
+  try {
+    const url = new URL(withProtocol);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function parsePlaceLink(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  const markdownMatch = trimmed.match(/^\[([^\]]*)\]\(([^)]+)\)$/);
+  if (markdownMatch) {
+    const label = markdownMatch[1].trim() || "장소 링크";
+    const href = normalizeExternalUrl(markdownMatch[2]);
+    return href ? { href, label } : null;
+  }
+
+  const href = normalizeExternalUrl(trimmed);
+  return href ? { href, label: "장소 링크" } : null;
+}
+
+function TimeIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 13m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" />
+      <path d="M12 10l0 3l2 0" />
+      <path d="M7 4l-2.75 2" />
+      <path d="M17 4l2.75 2" />
+    </svg>
+  );
+}
+
+function MemoIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="16" y1="13" x2="8" y2="13" />
+      <line x1="16" y1="17" x2="8" y2="17" />
+      <polyline points="10 9 9 9 8 9" />
+    </svg>
+  );
+}
+
+interface TimePickerDialogProps {
+  open: boolean;
+  title: string;
+  hour: string;
+  minute: string;
+  onHourChange: (hour: string) => void;
+  onMinuteChange: (minute: string) => void;
+  onApply: () => void;
+  onClear: () => void;
+  onOpenChange: (open: boolean) => void;
+}
+
+function TimePickerDialog({
+  open,
+  title,
+  hour,
+  minute,
+  onHourChange,
+  onMinuteChange,
+  onApply,
+  onClear,
+  onOpenChange,
+}: TimePickerDialogProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm rounded-xl">
+        <DialogHeader>
+          <DialogTitle>{title}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <section className="space-y-2">
+            <div className="text-xs font-semibold text-on-surface-variant">시간</div>
+            <div className="grid grid-cols-6 gap-1.5">
+              {HOURS.map((option) => {
+                const selected = option === hour;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => onHourChange(option)}
+                    className={`h-9 rounded-lg border text-sm font-medium transition-colors ${
+                      selected
+                        ? "border-primary bg-primary text-white"
+                        : "border-slate-200 bg-white/70 text-on-surface hover:border-primary/50 hover:bg-sky-50"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="space-y-2">
+            <div className="text-xs font-semibold text-on-surface-variant">
+              분
+            </div>
+            <div className="grid grid-cols-6 gap-1.5">
+              {FIVE_MINUTE_OPTIONS.map((option) => {
+                const selected = option === minute;
+                return (
+                  <button
+                    key={option}
+                    type="button"
+                    onClick={() => onMinuteChange(option)}
+                    className={`h-9 rounded-lg border text-sm font-medium transition-colors ${
+                      selected
+                        ? "border-primary bg-primary text-white"
+                        : "border-slate-200 bg-white/70 text-on-surface hover:border-primary/50 hover:bg-sky-50"
+                    }`}
+                  >
+                    {option}
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClear} className="flex-1">
+            선택 안 함
+          </Button>
+          <Button onClick={onApply} className="flex-1">
+            적용
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function splitTimeSegments(value: string) {
+  const [hour = "", minute = ""] = value.split(":");
+  return {
+    hour: hour.replace(/\D/g, "").slice(0, 2),
+    minute: minute.replace(/\D/g, "").slice(0, 2),
+  };
+}
+
+function composeTimeSegments(hour: string, minute: string) {
+  if (!hour && !minute) return "";
+  if (hour.length === 2 || minute) return `${hour}:${minute}`;
+  return hour;
+}
+
+interface TimeSegmentInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  onPickerClick: () => void;
+  pickerLabel: string;
+}
+
+function TimeSegmentInput({
+  value,
+  onChange,
+  onPickerClick,
+  pickerLabel,
+}: TimeSegmentInputProps) {
+  const hourRef = useRef<HTMLInputElement | null>(null);
+  const minuteRef = useRef<HTMLInputElement | null>(null);
+  const { hour, minute } = splitTimeSegments(value);
+
+  const selectInput = (input: HTMLInputElement) => {
+    requestAnimationFrame(() => input.select());
+  };
+
+  const updateHour = (raw: string) => {
+    const digits = raw.replace(/\D/g, "").slice(0, 4);
+    const nextHour = digits.slice(0, 2);
+    const nextMinute = digits.length > 2 ? digits.slice(2, 4) : minute;
+    onChange(composeTimeSegments(nextHour, nextMinute));
+    if (nextHour.length === 2) {
+      requestAnimationFrame(() => {
+        minuteRef.current?.focus();
+        minuteRef.current?.select();
+      });
+    }
+  };
+
+  const updateMinute = (raw: string) => {
+    const nextMinute = raw.replace(/\D/g, "").slice(0, 2);
+    onChange(composeTimeSegments(hour, nextMinute));
+  };
+
+  return (
+    <div className="flex h-9 items-center rounded-md border border-input bg-transparent px-2 text-sm shadow-sm transition-colors focus-within:ring-1 focus-within:ring-ring hover:border-primary/50">
+      <input
+        ref={hourRef}
+        type="text"
+        inputMode="numeric"
+        aria-label="시간"
+        placeholder="HH"
+        maxLength={2}
+        value={hour}
+        onFocus={(e) => selectInput(e.currentTarget)}
+        onChange={(e) => updateHour(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === ":" || e.key === "ArrowRight") {
+            e.preventDefault();
+            minuteRef.current?.focus();
+            minuteRef.current?.select();
+          }
+        }}
+        className="h-full w-7 bg-transparent text-center font-medium text-on-surface outline-none placeholder:text-muted-foreground"
+      />
+      <span className="px-0.5 text-on-surface-variant">:</span>
+      <input
+        ref={minuteRef}
+        type="text"
+        inputMode="numeric"
+        aria-label="분"
+        placeholder="MM"
+        maxLength={2}
+        value={minute}
+        onFocus={(e) => selectInput(e.currentTarget)}
+        onChange={(e) => updateMinute(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Backspace" && !minute) {
+            e.preventDefault();
+            hourRef.current?.focus();
+            hourRef.current?.select();
+          }
+          if (e.key === "ArrowLeft") {
+            e.preventDefault();
+            hourRef.current?.focus();
+            hourRef.current?.select();
+          }
+        }}
+        className="h-full w-7 bg-transparent text-center font-medium text-on-surface outline-none placeholder:text-muted-foreground"
+      />
+      <button
+        type="button"
+        onClick={onPickerClick}
+        aria-label={pickerLabel}
+        className="-mr-1 ml-auto flex h-full w-8 items-center justify-center text-on-surface-variant transition-colors hover:text-primary"
+      >
+        <TimeIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
 /**
  * 정렬 규칙:
- * 1) time이 있는 카드를 먼저, 없는 카드는 뒤
- * 2) time끼리는 "HH:MM" 사전순 (= 시간 오름차순)
- * 3) time 없는 것끼리는 createdAt 내림차순 (최신 등록순)
+ * 1) startTime이 있는 카드를 먼저, 없는 카드는 뒤
+ * 2) startTime끼리는 "HH:MM" 사전순 (= 시간 오름차순)
+ * 3) startTime 없는 것끼리는 createdAt 내림차순 (최신 등록순)
+ * 기존 time 필드는 과거 데이터 호환용 fallback으로 사용한다.
  */
 function comparePlaces(a: Place, b: Place) {
-  const aHas = !!(a.time && a.time.trim());
-  const bHas = !!(b.time && b.time.trim());
+  const aTime = placeStartTime(a);
+  const bTime = placeStartTime(b);
+  const aHas = !!aTime;
+  const bHas = !!bTime;
   if (aHas && !bHas) return -1;
   if (!aHas && bHas) return 1;
-  if (aHas && bHas) return (a.time || "").localeCompare(b.time || "");
+  if (aHas && bHas) return aTime.localeCompare(bTime);
   const aMs = a.createdAt?.toMillis?.() ?? 0;
   const bMs = b.createdAt?.toMillis?.() ?? 0;
   return bMs - aMs;
@@ -111,7 +419,16 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
   const [modalDate, setModalDate] = useState<string>("");
-  const [formData, setFormData] = useState({ name: "", time: "", note: "" });
+  const [formData, setFormData] = useState({
+    name: "",
+    startTime: "",
+    endTime: "",
+    placeUrl: "",
+    note: "",
+  });
+  const [timePickerTarget, setTimePickerTarget] = useState<"startTime" | "endTime" | null>(null);
+  const [timePickerHour, setTimePickerHour] = useState("09");
+  const [timePickerMinute, setTimePickerMinute] = useState("00");
 
   // Swipe refs (placeId → handle)
   const swipeRefs = useRef<Map<string, SwipeableItemHandle | null>>(new Map());
@@ -172,10 +489,37 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
     });
   };
 
+  const openTimePicker = (target: "startTime" | "endTime") => {
+    const current = formData[target];
+    const [hour, minute] = isCompleteTime(current) ? current.split(":") : ["09", "00"];
+    setTimePickerHour(hour || "09");
+    setTimePickerMinute(minute || "00");
+    setTimePickerTarget(target);
+  };
+
+  const closeTimePicker = () => {
+    setTimePickerTarget(null);
+  };
+
+  const applyTimePicker = () => {
+    if (!timePickerTarget) return;
+    setFormData({
+      ...formData,
+      [timePickerTarget]: `${timePickerHour}:${timePickerMinute}`,
+    });
+    closeTimePicker();
+  };
+
+  const clearTimePicker = () => {
+    if (!timePickerTarget) return;
+    setFormData({ ...formData, [timePickerTarget]: "" });
+    closeTimePicker();
+  };
+
   const openAddModal = (date: string) => {
     setEditingPlace(null);
     setModalDate(date);
-    setFormData({ name: "", time: "", note: "" });
+    setFormData({ name: "", startTime: "", endTime: "", placeUrl: "", note: "" });
     setIsModalOpen(true);
   };
 
@@ -184,7 +528,9 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
     setModalDate(place.date);
     setFormData({
       name: place.name,
-      time: place.time || "",
+      startTime: place.startTime || place.time || "",
+      endTime: place.endTime || "",
+      placeUrl: place.placeUrl || "",
       note: place.note || "",
     });
     setIsModalOpen(true);
@@ -195,13 +541,31 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
       toast.error("일정 이름을 입력해주세요");
       return;
     }
+    if (formData.startTime && !isCompleteTime(formData.startTime)) {
+      toast.error("시작 시간을 HH:MM 형식으로 입력해주세요");
+      return;
+    }
+    if (formData.endTime && !isCompleteTime(formData.endTime)) {
+      toast.error("종료 시간을 HH:MM 형식으로 입력해주세요");
+      return;
+    }
     if (!user) return;
+
+    const rawPlaceUrl = formData.placeUrl.trim();
+    const placeLink = parsePlaceLink(rawPlaceUrl);
+    if (rawPlaceUrl && !placeLink) {
+      toast.error("올바른 장소 링크를 입력해주세요");
+      return;
+    }
 
     try {
       if (editingPlace) {
         await updateDoc(doc(db, `trips/${tripId}/places`, editingPlace.id), {
           name: formData.name.trim(),
-          time: formData.time,
+          time: "",
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          placeUrl: rawPlaceUrl,
           note: formData.note.trim(),
         });
         toast.success("일정이 수정되었습니다.");
@@ -209,7 +573,10 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
         await addDoc(collection(db, `trips/${tripId}/places`), {
           name: formData.name.trim(),
           date: modalDate,
-          time: formData.time,
+          time: "",
+          startTime: formData.startTime,
+          endTime: formData.endTime,
+          placeUrl: rawPlaceUrl,
           note: formData.note.trim(),
           addedBy: user.displayName || "익명",
           addedByUid: user.uid,
@@ -278,6 +645,8 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
               {dayPlaces.map((place, pIdx) => {
                 const canManage = place.addedByUid === user?.uid;
                 const highlight = isToday && pIdx === 0;
+                const timeLabel = formatPlaceTime(place);
+                const placeLink = parsePlaceLink(place.placeUrl || "");
 
                 const cardContent = (
                   <div
@@ -308,19 +677,28 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                           {place.name}
                         </h3>
                       </div>
-                      {place.time && (
-                        <p className="text-xs text-on-surface-variant mt-1">
-                          <span className="font-medium text-on-surface">
-                            {place.time}
-                          </span>
-                        </p>
+                      {timeLabel && (
+                        <div className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant">
+                          <TimeIcon className="mt-1 h-3 w-3 shrink-0" />
+                          <span className="min-w-0 break-words">{timeLabel}</span>
+                        </div>
+                      )}
+                      {placeLink && (
+                        <a
+                          href={placeLink.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant hover:underline"
+                        >
+                          <MapPin className="mt-1 h-3 w-3 shrink-0" strokeWidth={2} />
+                          <span className="min-w-0 break-words">{placeLink.label}</span>
+                        </a>
                       )}
                       {place.note && (
-                        <div className="text-[13px] text-on-surface-variant mt-1.5 flex items-start gap-1">
-                          <span className="material-symbols-outlined text-[14px] mt-0.5 shrink-0">
-                            location_on
-                          </span>
-                          <span className="whitespace-pre-wrap break-words min-w-0">
+                        <div className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant">
+                          <MemoIcon className="mt-1 h-3 w-3 shrink-0" />
+                          <span className="min-w-0 whitespace-pre-wrap break-words">
                             <Linkify
                               options={{
                                 target: "_blank",
@@ -374,7 +752,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                       if (open) closeAllSwipes(place.id);
                     }}
                     actions={
-                      <div className="flex w-full h-full items-center justify-center gap-2 pl-2 pr-1">
+                      <div className="flex h-full w-full items-center justify-center gap-1.5 pl-2 pr-1">
                         <button
                           type="button"
                           aria-label="수정"
@@ -382,11 +760,9 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                             swipeRefs.current.get(place.id)?.close();
                             openEditModal(place);
                           }}
-                          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-white/60 bg-white/60 text-slate-700 shadow-[0_4px_12px_-2px_rgba(30,41,59,0.25)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/80 hover:text-slate-900 active:scale-95"
+                          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-slate-700 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
                         >
-                          <span className="material-symbols-outlined text-[20px] leading-none">
-                            edit
-                          </span>
+                          <Edit2 className="h-4 w-4" />
                         </button>
                         <button
                           type="button"
@@ -395,11 +771,9 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                             swipeRefs.current.get(place.id)?.close();
                             handleDelete(place.id);
                           }}
-                          className="flex h-11 w-11 items-center justify-center rounded-2xl border border-rose-200/70 bg-rose-50/70 text-rose-500 shadow-[0_4px_12px_-2px_rgba(244,63,94,0.25)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-rose-100/80 hover:text-rose-600 active:scale-95"
+                          className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-slate-700 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-rose-500/40 hover:text-white active:scale-95"
                         >
-                          <span className="material-symbols-outlined text-[20px] leading-none">
-                            delete
-                          </span>
+                          <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
                     }
@@ -430,44 +804,84 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
             </DialogTitle>
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">
-                일정 이름 <span className="text-red-500">*</span>
+            <section className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  일정 이름 <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  placeholder="예: 에펠탑 구경"
+                  value={formData.name}
+                  onChange={(e) =>
+                    setFormData({ ...formData, name: e.target.value })
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">
+                    시작 시간 <span className="font-normal text-slate-400">(선택)</span>
+                  </label>
+                  <TimeSegmentInput
+                    value={formData.startTime}
+                    onChange={(value) =>
+                      setFormData({ ...formData, startTime: value })
+                    }
+                    onPickerClick={() => openTimePicker("startTime")}
+                    pickerLabel="시작 시간 선택"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-semibold text-slate-700">
+                    종료 시간 <span className="font-normal text-slate-400">(선택)</span>
+                  </label>
+                  <TimeSegmentInput
+                    value={formData.endTime}
+                    onChange={(value) =>
+                      setFormData({ ...formData, endTime: value })
+                    }
+                    onPickerClick={() => openTimePicker("endTime")}
+                    pickerLabel="종료 시간 선택"
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="space-y-2 border-t border-slate-100 pt-4">
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                <span className="material-symbols-outlined text-[17px] text-primary">
+                  location_on
+                </span>
+                장소 <span className="font-normal text-slate-400">(선택)</span>
               </label>
               <Input
-                placeholder="예: 에펠탑 구경"
-                value={formData.name}
+                type="text"
+                inputMode="url"
+                placeholder="[도톤보리](https://maps.app.goo.gl/...) 또는 URL"
+                value={formData.placeUrl}
                 onChange={(e) =>
-                  setFormData({ ...formData, name: e.target.value })
+                  setFormData({ ...formData, placeUrl: e.target.value })
                 }
               />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">
-                시간 (선택)
-              </label>
-              <Input
-                type="time"
-                value={formData.time}
-                onChange={(e) =>
-                  setFormData({ ...formData, time: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-slate-700">
-                메모 (선택)
+            </section>
+
+            <section className="space-y-2 border-t border-slate-100 pt-4">
+              <label className="flex items-center gap-1.5 text-sm font-semibold text-slate-700">
+                <span className="material-symbols-outlined text-[17px] text-primary">
+                  notes
+                </span>
+                메모 <span className="font-normal text-slate-400">(선택)</span>
               </label>
               <textarea
-                className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50 resize-none"
-                placeholder="간단한 메모 (URL 입력 시 링크로 변환됩니다)"
+                className="flex min-h-[80px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                placeholder="간단한 메모"
                 value={formData.note}
                 onChange={(e) =>
                   setFormData({ ...formData, note: e.target.value })
                 }
                 rows={3}
               />
-            </div>
+            </section>
           </div>
           <DialogFooter>
             <Button onClick={handleSave} className="w-full">
@@ -476,6 +890,19 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <TimePickerDialog
+        open={!!timePickerTarget}
+        title={timePickerTarget === "endTime" ? "종료 시간 선택" : "시작 시간 선택"}
+        hour={timePickerHour}
+        minute={timePickerMinute}
+        onHourChange={setTimePickerHour}
+        onMinuteChange={setTimePickerMinute}
+        onApply={applyTimePicker}
+        onClear={clearTimePicker}
+        onOpenChange={(open) => {
+          if (!open) closeTimePicker();
+        }}
+      />
     </div>
   );
 }

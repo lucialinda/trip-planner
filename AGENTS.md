@@ -21,7 +21,7 @@ trips/{tripId}
   name, startDate, endDate, code, members: {uid: displayName}, memberUids, createdAt
 
 trips/{tripId}/places/{placeId}
-  name, date (YYYY-MM-DD), time, note, addedBy, createdAt
+  name, date (YYYY-MM-DD), startTime, endTime, placeUrl, note, addedBy, createdAt
   likes: {uid: true}, dislikes: {uid: true}
 
 trips/{tripId}/votes/{voteId}
