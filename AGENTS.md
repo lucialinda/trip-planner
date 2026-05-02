@@ -58,6 +58,7 @@ tripCodes/{code}
 - 로직/기능/UI 구조가 바뀌는 작업은 **코드 수정 전에 Plan subagent로 계획을 작성하고 사용자 컨펌 후 진행**
 - 컴포넌트 추가 시 Shadcn UI 적극 활용 (`npx shadcn@latest add ...`)
 - 클라이언트 중심 앱이므로 서버 컴포넌트보다는 `use client` 적극 활용 (Firebase 연동 부분)
+- 앱 주요 화면은 일정 화면처럼 `w-full max-w-3xl mx-auto` 기준의 최대 폭 컨테이너를 사용해, 데스크톱에서 화면 가로 크기에 따라 무한정 늘어나지 않게 할 것
 
 ## 주의사항
 

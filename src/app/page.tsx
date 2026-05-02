@@ -268,7 +268,7 @@ function HomeContent() {
 
   // ----------- Logged-in: Home dashboard -----------
   return (
-    <div className="relative flex min-h-screen w-full flex-col bg-background overflow-x-hidden">
+    <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
       <header className="flex items-center bg-white/80 backdrop-blur-md p-4 justify-between border-b border-outline-variant/30 sticky top-0 z-40">
         <h2 className="text-on-surface text-lg font-bold leading-tight tracking-tight flex-1">내 여행</h2>
@@ -389,22 +389,24 @@ function HomeContent() {
       </main>
 
       {/* FAB: 새 여행 만들기 / 코드로 참가 */}
-      <button
-        type="button"
-        onClick={() => {
-          setCreateDefaultMode("create");
-          setCreateOpen(true);
-        }}
-        aria-label="새 여행"
-        className="fixed bottom-6 right-5 w-14 h-14 rounded-full bg-primary text-white shadow-lg shadow-primary/30 flex items-center justify-center active:scale-90 transition-transform z-30"
-      >
-        <span
-          className="material-symbols-outlined text-[28px]"
-          style={{ fontVariationSettings: "'FILL' 1" }}
+      <div className="fixed bottom-6 left-1/2 z-30 w-full max-w-3xl -translate-x-1/2 px-5 pointer-events-none">
+        <button
+          type="button"
+          onClick={() => {
+            setCreateDefaultMode("create");
+            setCreateOpen(true);
+          }}
+          aria-label="새 여행"
+          className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-90 pointer-events-auto"
         >
-          add
-        </span>
-      </button>
+          <span
+            className="material-symbols-outlined text-[28px]"
+            style={{ fontVariationSettings: "'FILL' 1" }}
+          >
+            add
+          </span>
+        </button>
+      </div>
 
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
       <CreateTripDialog
