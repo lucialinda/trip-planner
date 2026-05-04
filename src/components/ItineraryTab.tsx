@@ -857,7 +857,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
               <Input
                 type="text"
                 inputMode="url"
-                placeholder="[도톤보리](https://maps.app.goo.gl/...) 또는 URL"
+                placeholder="[에펠탑](https://maps.app.goo.gl/...) 또는 URL"
                 value={formData.placeUrl}
                 onChange={(e) =>
                   setFormData({ ...formData, placeUrl: e.target.value })
