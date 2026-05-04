@@ -61,4 +61,7 @@ tripCodes/{code}
 - 앱 주요 화면은 일정 화면처럼 `w-full max-w-3xl mx-auto` 기준의 최대 폭 컨테이너를 사용해, 데스크톱에서 화면 가로 크기에 따라 무한정 늘어나지 않게 할 것
 - **예시 데이터/플레이스홀더는 일본 관련 항목을 사용하지 않을 것** (도쿄/오사카/엔화/JR/돈키호테/스시 등 금지). 프랑스(파리·니스·루브르·바게트·EUR 등) 관련 항목을 우선 사용
 
-## 
+## 주의사항
+
+- Firebase config 키는 클라이언트 환경변수로 노출되어도 무방 (Firestore Rules로 제어)
+- 정적 내보내기(`output: "export"`)를 사용하므로 Next.js Image 최적화 대신 `unoptimized: true` 사용.
