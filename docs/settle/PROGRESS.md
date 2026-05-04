@@ -14,11 +14,11 @@
 
 ## Phase 진행 상태
 
-- [ ] **Phase 1** — 정적 UI 이전 (`01-static-ui.md`)
-  - [ ] settle/page.tsx 레퍼런스 레이아웃 이전
-  - [ ] sky → primary(navy) 컬러 치환
-  - [ ] FAB 홈 화면과 동일하게
-  - [ ] BottomNav Expenses 활성
+- [x] **Phase 1** — 정적 UI 이전 (`01-static-ui.md`)
+  - [x] settle/page.tsx 레퍼런스 레이아웃 이전
+  - [x] sky → primary(navy) 컬러 치환
+  - [x] FAB 홈 화면과 동일하게
+  - [x] BottomNav Expenses 활성
 
 - [ ] **Phase 2** — Firestore 읽기 (`02-firestore-read.md`)
   - [ ] `src/lib/expenses.ts` 타입/메타/effectiveKrw
@@ -53,8 +53,6 @@
   - [ ] Bento 카드 톱니 버튼
   - [ ] 임시 계산값 + ⓘ 안내
 
-## 보강 메모 (작업 중 발견 사항)
-
-> 각 Phase에서 새로 알게 된 것 / 변경 사항을 여기에 누적. 마지막에 `00-overview.md`로 흡수.
-
-- (비어있음)
+- [ ] **Phase 7 (초안)** — 멀티선택 그룹 1/n 정산 (`07-group-settle.md`)
+  - [ ] `src/lib/settle.ts` — `computeGroupSplit()` 구현 + 단위 테스트
+  - [ ] 카드 �
