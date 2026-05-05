@@ -97,12 +97,14 @@ settleSettings?: {
   confirmedKrwAmount?: number;
   status: "tentative" | "confirmed";
   paidAt: Timestamp;           // 사용자가 지정한 결제 일시
+  participants: { [uid: string]: true };  // 정산 참여자 (결제자 포함, AddExpenseDialog 체크박스로 지정)
   createdAt: Timestamp;
   updatedAt: Timestamp;
 }
 ```
 
 기존 `amount` 필드는 마이그레이션 시 `krwAmount`로 매핑 (없으면 KRW + status='confirmed' + rate=1).
+`participants`가 없는 구버전 문서는 fallback으로 **현재 trip 멤버 전원**을 참여자로 간주 (UI에서는 표시만 하고 저장은 따로 안 함 — 다음 편집 시 명시화).
 
 ## 1인당 정산 (TODO)
 
@@ -114,16 +116,17 @@ settleSettings?: {
 
 ## 단계 분할
 
-세션이 끊겨도 이어갈 수 있게 6단계로 쪼갰다. 각 단계가 끝나면 `PROGRESS.md`에 체크.
+세션이 끊겨도 이어갈 수 있게 7단계로 쪼갰다. 각 단계가 끝나면 `PROGRESS.md`에 체크.
 
 | Phase | 파일 | 내용 |
 |---|---|---|
 | 1 | `01-static-ui.md` | 레퍼런스 → `settle/page.tsx` 정적 이전 + 네이비 테마 |
 | 2 | `02-firestore-read.md` | `expenses` 구독, 카테고리 합계 표시 (스키마 마이그레이션 포함) |
-| 3 | `03-add-expense.md` | 추가 다이얼로그 + 환율 fetch |
+| 3 | `03-add-expense.md` | 추가 다이얼로그 + 환율 fetch + 결제자/정산 인원 지정 |
 | 4 | `04-settings.md` | 점 세개 → 설정 다이얼로그 + 트립 문서 저장/적용 |
 | 5 | `05-confirm-and-edit.md` | 확정 상태 토글 + 편집 다이얼로그 |
 | 6 | `06-per-person.md` | 1인당 정산 폼 (계산 로직은 TODO 주석) |
+| 7 | `07-group-settle.md` | 멀티선택 그룹 정산 + 메시지 생성/공유 + 정산완료 일괄 표시 |
 
 ## 작업 원칙
 

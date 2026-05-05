@@ -8,7 +8,7 @@
 
 ## 진입 방식
 
-`/settle?tripId=xxx` 쿼리 파라미터 사용 (앱의 다른 페이지처럼 `useSearchParams`).
+`/settle?id=xxx` 쿼리 파라미터 사용 (앱 전반의 BottomNav가 trip id를 `?id`로 부착하므로 이를 정식 채택). 페이지 안에서 `useSearchParams().get("id")`.
 
 > 트립을 명시하지 않은 `/settle` 진입은 Phase 외 검토. 우선은 첫 번째 활성 트립 자동 선택 (또는 안내 화면).
 
@@ -40,6 +40,8 @@ export interface Expense {
   confirmedKrwAmount?: number;
   status: ExpenseStatus;
   paidAt: Date;
+  /** 정산 참여자 uid 맵 (결제자 포함). 빈 객체이면 호출 측에서 멤버 전원으로 해석 */
+  participants: Record<string, true>;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -85,9 +87,16 @@ function fromDoc(d: QueryDocumentSnapshot): Expense {
     confirmedKrwAmount: v.confirmedKrwAmount,
     status: v.status ?? "confirmed",
     paidAt: (v.paidAt?.toDate?.() ?? v.createdAt?.toDate?.() ?? new Date()),
+    participants: (v.participants && typeof v.participants === "object") ? v.participants : {},
     createdAt: v.createdAt?.toDate?.() ?? new Date(),
     updatedAt: v.updatedAt?.toDate?.() ?? v.createdAt?.toDate?.() ?? new Date(),
   };
+}
+
+/** 정산 참여자 uid 목록을 안전하게 꺼낸다. 비어 있으면 trip 멤버 전원으로 fallback. */
+export function getParticipantUids(e: Expense, tripMemberUids: string[]): string[] {
+  const explicit = Object.keys(e.participants);
+  return explicit.length > 0 ? explicit : tripMemberUids;
 }
 ```
 
@@ -113,8 +122,9 @@ function fromDoc(d: QueryDocumentSnapshot): Expense {
 
 ## 수용 기준
 
-- [ ] `/settle?tripId=...` 진입 시 실제 expenses가 보임
+- [ ] `/settle?id=...` 진입 시 실제 expenses가 보임
 - [ ] 구버전 `amount`만 있는 문서도 깨지지 않고 표시
 - [ ] 카테고리 합계가 정확하고, 가장 많이 쓴 곳 라벨이 동적으로 갱신됨
 - [ ] 빈 상태/로딩/에러 분기 모두 노출 가능
 - [ ] 새 문서 생성/삭제(콘솔에서) 시 실시간 반영
+- [ ] `participants` 미존재 문서가 멤버 전원 정산으로 해석되어 표시됨
