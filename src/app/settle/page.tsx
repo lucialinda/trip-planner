@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { BottomNav } from "@/components/BottomNav";
 
@@ -102,8 +103,22 @@ const DUMMY_TOTAL = DUMMY_EXPENSES.reduce((sum, e) => sum + e.krwAmount, 0);
 const DUMMY_TOP_CATEGORY = { label: "식비", percent: 42 };
 const DUMMY_PER_PERSON = Math.round(DUMMY_TOTAL / 4); // 4명 기준 임시
 
+// 필터 옵션 (Phase 1: 더미 데이터 기준 — Phase 2에서 Firestore 쿼리/메모이제이션으로 교체)
+type FilterKey = "all" | "tentative" | "confirmed";
+const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
+  { key: "all", label: "모두보기" },
+  { key: "tentative", label: "미정산" },
+  { key: "confirmed", label: "정산완료" },
+];
+
 export default function SettlePage() {
   const router = useRouter();
+  const [filter, setFilter] = useState<FilterKey>("all");
+
+  const filteredExpenses =
+    filter === "all"
+      ? DUMMY_EXPENSES
+      : DUMMY_EXPENSES.filter((e) => e.status === filter);
 
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
@@ -193,9 +208,9 @@ export default function SettlePage() {
           </div>
         </div>
 
-        {/* 정산 내역 헤더 + 정렬 토글 */}
+        {/* 지출 내역 헤더 + 정렬 토글 */}
         <div className="flex items-center justify-between pt-2">
-          <h3 className="text-lg font-bold text-on-surface">정산 내역</h3>
+          <h3 className="text-lg font-bold text-on-surface">지출 내역</h3>
           <button
             type="button"
             // Phase 5 이후 정렬 동작 연결
@@ -207,45 +222,76 @@ export default function SettlePage() {
           </button>
         </div>
 
-        {/* Expense 리스트 */}
-        <div className="space-y-3">
-          {DUMMY_EXPENSES.map((exp) => {
-            const meta = CATEGORY_META[exp.category];
-            const isConfirmed = exp.status === "confirmed";
+        {/* 필터 칩 (모두보기 / 미정산 / 정산완료) */}
+        <div className="flex gap-2">
+          {FILTER_OPTIONS.map((opt) => {
+            const active = filter === opt.key;
             return (
-              <div
-                key={exp.id}
-                role="button"
-                tabIndex={0}
-                // Phase 5에서 편집 다이얼로그 연결
-                onClick={() => {}}
-                className="glass-panel p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99]"
+              <button
+                key={opt.key}
+                type="button"
+                onClick={() => setFilter(opt.key)}
+                aria-pressed={active}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                  active
+                    ? "bg-primary text-white border border-primary"
+                    : "bg-white/60 border border-outline-variant text-on-surface-variant hover:border-primary/40"
+                }`}
               >
-                <div
-                  className={`w-12 h-12 rounded-lg flex items-center justify-center border ${meta.iconBoxClass}`}
-                >
-                  <span className="material-symbols-outlined">{meta.icon}</span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-on-surface font-bold text-base truncate">
-                    {exp.description}
-                  </h4>
-                  <p className="text-on-surface-variant text-xs mt-0.5">{exp.paidAt}</p>
-                </div>
-                <div className="text-right shrink-0">
-                  <p className="text-on-surface font-bold">{formatKrw(exp.krwAmount)}</p>
-                  <p
-                    className={`text-[10px] font-semibold mt-0.5 ${
-                      isConfirmed ? "text-tertiary" : "text-primary"
-                    }`}
-                  >
-                    {isConfirmed ? "정산 완료" : "정산 예정"}
-                  </p>
-                </div>
-              </div>
+                {opt.label}
+              </button>
             );
           })}
         </div>
+
+        {/* Expense 리스트 */}
+        {filteredExpenses.length === 0 ? (
+          <div className="glass-panel rounded-xl p-8 text-center">
+            <span className="material-symbols-outlined text-3xl text-on-surface-variant/50 mb-1">
+              filter_list_off
+            </span>
+            <p className="text-sm text-on-surface-variant">해당하는 항목이 없어요</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {filteredExpenses.map((exp) => {
+              const meta = CATEGORY_META[exp.category];
+              const isConfirmed = exp.status === "confirmed";
+              return (
+                <div
+                  key={exp.id}
+                  role="button"
+                  tabIndex={0}
+                  // Phase 5에서 편집 다이얼로그 연결
+                  onClick={() => {}}
+                  className="glass-panel p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99]"
+                >
+                  <div
+                    className={`w-12 h-12 rounded-lg flex items-center justify-center border ${meta.iconBoxClass}`}
+                  >
+                    <span className="material-symbols-outlined">{meta.icon}</span>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <h4 className="text-on-surface font-bold text-base truncate">
+                      {exp.description}
+                    </h4>
+                    <p className="text-on-surface-variant text-xs mt-0.5">{exp.paidAt}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-on-surface font-bold">{formatKrw(exp.krwAmount)}</p>
+                    <p
+                      className={`text-[10px] font-semibold mt-0.5 ${
+                        isConfirmed ? "text-tertiary" : "text-primary"
+                      }`}
+                    >
+                      {isConfirmed ? "정산 완료" : "정산 예정"}
+                    </p>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </main>
 
       {/* FAB: 홈과 동일한 스타일/위치 (max-w-3xl 컨테이너 안에서 ml-auto 정렬) */}
