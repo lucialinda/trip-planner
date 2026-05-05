@@ -133,7 +133,14 @@ function TripContent() {
       <header className="h-14 bg-white/80 backdrop-blur-md border-b border-sky-100 flex items-center justify-between px-2 sticky top-0 z-30">
         <button
           type="button"
-          onClick={() => router.push("/")}
+          onClick={() => {
+            // 직접 진입 등으로 history가 비어 있으면 홈으로 fallback
+            if (typeof window !== "undefined" && window.history.length > 1) {
+              router.back();
+            } else {
+              router.push("/");
+            }
+          }}
           aria-label="뒤로가기"
           className="w-10 h-10 flex items-center justify-center text-primary hover:bg-sky-50 transition-colors active:scale-95 rounded-full"
         >
