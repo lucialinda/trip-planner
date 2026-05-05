@@ -47,10 +47,24 @@ tripCodes/{code}
 ## 개발 흐름
 
 - **로컬 서버**: `npm run dev` (에뮬레이터와 동시 실행 필요 시 터미널 분리)
-- **Firebase 에뮬레이터**: `npx firebase emulators:start`
+- **Firebase 에뮬레이터**: `npm run emulator` (시작 시 `./emulator_data` import, 종료 시 자동 export)
 - **배포 방식 (Static Export)**:
   1. `npm run build`
   2. `firebase deploy --only hosting`
+
+### 에뮬레이터 데이터 동기화 (Windows ↔ Mac)
+
+`emulator_data/`는 git으로 추적해서 두 머신 간에 공유함. 작업이 끝나면 반드시 커밋·푸시할 것.
+
+```bash
+npm run emulator
+# 작업 후 Ctrl+C로 종료 → emulator_data/에 자동 export
+git add emulator_data
+git commit -m "chore: update emulator data"
+git push
+```
+
+다른 머신에서 작업 시작 전엔 `git pull` 먼저. 양쪽에서 동시에 켜놓고 작업하면 머지 충돌 나기 쉬우니 한 번에 한쪽에서만 사용.
 
 ## 작업 방식
 
