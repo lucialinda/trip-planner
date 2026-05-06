@@ -23,12 +23,12 @@
   - [x] FAB 홈 화면과 동일하게
   - [x] BottomNav Expenses 활성
 
-- [ ] **Phase 2** — Firestore 읽기 (`02-firestore-read.md`)
-  - [ ] `src/lib/expenses.ts` 타입/메타/effectiveKrw
-  - [ ] `/settle?tripId=...` 진입 + onSnapshot
-  - [ ] 카테고리 합계 / topCategory 표시
-  - [ ] 구버전 amount 마이그레이션 fallback
-  - [ ] 빈/로딩/에러 분기
+- [x] **Phase 2** — Firestore 읽기 (`02-firestore-read.md`)
+  - [x] `src/lib/expenses.ts` 타입/메타/effectiveKrw + `fromDoc` / `getParticipantUids` / `formatPaidAt` / `formatKrw`
+  - [x] `/settle?id=...` 진입 + onSnapshot (trip 문서 + expenses 컬렉션 동시 구독)
+  - [x] 카테고리 합계 / topCategory 표시 (총합 0이면 "기록 없음")
+  - [~] ~~구버전 amount 마이그레이션 fallback~~ — **스킵**: 에뮬레이터 데이터 전부 삭제 후 신스키마로 재시작하기로 결정 (2026-05-06)
+  - [x] 빈/로딩/에러 분기 (전체 빈 / 필터 빈 / 스켈레톤 / 에러 + 다시 시도)
 
 - [ ] **Phase 3** — 추가 다이얼로그 (`03-add-expense.md`)
   - [ ] `src/lib/currencies.ts`
@@ -76,6 +76,15 @@
   - FAB은 홈과 동일하게 `fixed left-1/2 -translate-x-1/2 max-w-3xl` 컨테이너 안에서 `ml-auto`로 우측 정렬. 다만 BottomNav가 `bottom-0`에 sticky하게 깔리므로 정산 FAB은 가림 방지 위해 `bottom-24` 사용 (홈은 `bottom-6` — 홈에 BottomNav 없음).
   - 카테고리 톤 매핑: food=primary, lodging=tertiary, cafe=amber, activity=rose, shopping=emerald, transit/etc=slate(=on-surface-variant). Phase 2에서 `expenses.ts` 메타로 빼낼 예정.
   - 1인당 카드에 Phase 6 자리잡기 위한 `tune` 톱니 버튼만 미리 배치 (noop). 임시 계산값은 `총액 / 4`.
+
+- **Phase 2 (2026-05-06)**:
+  - 신스키마만 지원: 에뮬레이터 데이터 전부 삭제하기로 합의해서 `fromDoc`에서 구버전 `amount`/`createdAt`-only 문서 fallback 제거.
+  - `CATEGORY_META`는 `src/lib/expenses.ts`로 이전, 페이지의 `iconBoxClass`(완성된 Tailwind 클래스 문자열)를 정답으로 채택. 문서의 추상 `tone` 필드는 미사용.
+  - `formatKrw` / `formatPaidAt`도 `expenses.ts`에 같이 둠 (Phase 3+ 다이얼로그에서 재사용).
+  - trip 문서와 expenses 컬렉션을 **각각 별도 useEffect**로 구독. 트립 멤버 수는 `Object.keys(trip.members).length`에서 산출.
+  - 비로그인/`id` 누락 시 `/`로 라우팅, trip 문서 부재 시 토스트 + 홈.
+  - 빈 상태 4종: 초기 스켈레톤 / 전체 expenses=0 (FAB 안내) / 필터로 0 / onSnapshot 에러 (다시 시도 = 페이지 reload). onSnapshot은 자체 재시도라 명시 retry는 reload로 우회.
+  - `react-hooks/set-state-in-effect` 룰 때문에 effect 본문에서 `setLoading(true)` 같은 reset setState 호출은 금지. 초기값에 의존하고, 콜백에서만 setState 한다.
 
 - **2026-05-05 보강 (Phase 2/3/7 합의)**:
   - **트립 컨텍스트 파라미터 정정**: BottomNav가 trip id를 `?id=...`로 부착하므로 `/settle?id=...`를 정식 채택 (기존 문서의 `?tripId=...`는 오타). Phase 2 진입부에서 `useSearchParams().get("id")` 사용.
