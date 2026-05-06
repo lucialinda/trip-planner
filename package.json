@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "emulator": "firebase emulators:start --import=./emulator_data --export-on-exit=./emulator_data"
+    "emulator": "firebase emulators:start --import=./emulator_data --export-on-exit=./emulator_data",
+    "seed:expenses": "node scripts/seed-expenses.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -34,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.4",
+    "firebase-admin": "^13.8.0",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
