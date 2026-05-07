@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { BottomNav } from "@/components/BottomNav";
+import { AddExpenseDialog } from "@/components/AddExpenseDialog";
 import {
   CATEGORY_META,
   type Expense,
@@ -33,6 +34,10 @@ interface TripData {
   members?: Record<string, string>;
   memberUids?: string[];
 }
+
+// ---------- 상수 ----------
+
+const EMPTY_MEMBERS: Record<string, string> = {};
 
 // ---------- 필터 ----------
 
@@ -57,6 +62,7 @@ function SettleContent() {
   const [expensesLoading, setExpensesLoading] = useState(true);
   const [expensesError, setExpensesError] = useState<FirestoreError | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [addOpen, setAddOpen] = useState(false);
 
   // 비로그인 / id 누락 → 홈으로
   useEffect(() => {
@@ -319,8 +325,13 @@ function SettleContent() {
         <button
           type="button"
           aria-label="지출 추가"
-          // Phase 3에서 AddExpenseDialog 연결
-          onClick={() => {}}
+          onClick={() => {
+            if (!trip || !tripId) {
+              toast.error("여행 정보를 불러오는 중이에요.");
+              return;
+            }
+            setAddOpen(true);
+          }}
           className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-90 pointer-events-auto"
         >
           <span
@@ -331,6 +342,16 @@ function SettleContent() {
           </span>
         </button>
       </div>
+
+      {/* 추가 다이얼로그 (Phase 3) */}
+      {trip && tripId && (
+        <AddExpenseDialog
+          open={addOpen}
+          onOpenChange={setAddOpen}
+          tripId={tripId}
+          members={trip.members ?? EMPTY_MEMBERS}
+        />
+      )}
 
       <BottomNav />
     </div>
@@ -492,3 +513,4 @@ export default function SettlePage() {
     </Suspense>
   );
 }
+    
