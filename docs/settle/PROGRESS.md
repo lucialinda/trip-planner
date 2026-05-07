@@ -31,8 +31,8 @@
   - [x] 빈/로딩/에러 분기 (전체 빈 / 필터 빈 / 스켈레톤 / 에러 + 다시 시도)
 
 - [ ] **Phase 3** — 추가 다이얼로그 (`03-add-expense.md`)
-  - [ ] `src/lib/currencies.ts`
-  - [ ] `src/lib/exchangeRate.ts` (5분 캐시)
+  - [x] `src/lib/currencies.ts` — `CurrencyMeta` + `ALL_CURRENCIES` + `getCurrencyMeta` / `formatCurrencyAmount` 헬퍼
+  - [x] `src/lib/exchangeRate.ts` (5분 캐시) — `fetchKrwRate` + `getCachedKrwRate`, inflight dedup 포함
   - [ ] `AddExpenseDialog.tsx` — 카테고리 그리드, 통화/금액, 결제자/일시, **정산 인원 체크박스(결제자 자동·해제 불가)**
   - [ ] FAB → dialog 연결
   - [ ] 환율 실패 시 수동 입력 fallback
@@ -85,6 +85,11 @@
   - 비로그인/`id` 누락 시 `/`로 라우팅, trip 문서 부재 시 토스트 + 홈.
   - 빈 상태 4종: 초기 스켈레톤 / 전체 expenses=0 (FAB 안내) / 필터로 0 / onSnapshot 에러 (다시 시도 = 페이지 reload). onSnapshot은 자체 재시도라 명시 retry는 reload로 우회.
   - `react-hooks/set-state-in-effect` 룰 때문에 effect 본문에서 `setLoading(true)` 같은 reset setState 호출은 금지. 초기값에 의존하고, 콜백에서만 setState 한다.
+
+- **Phase 3-A (2026-05-07)**:
+  - `src/lib/currencies.ts`에 `getCurrencyMeta(code)` (없으면 KRW fallback)와 `formatCurrencyAmount(amount, code)` 헬퍼를 추가. AddExpenseDialog뿐만 아니라 EditExpenseDialog/리스트에서도 재사용 예정.
+  - `src/lib/exchangeRate.ts`에 동시 호출 dedup용 `inflight` Map과 `getCachedKrwRate(local)` 동기 조회 헬퍼 추가. 다이얼로그가 열릴 때 직전 통화 캐시 hit이면 즉시 표시하고, miss일 때만 비동기 fetch + 스켈레톤.
+  - `tsc --noEmit` 에러 없음 (npm notice만 출력).
 
 - **2026-05-05 보강 (Phase 2/3/7 합의)**:
   - **트립 컨텍스트 파라미터 정정**: BottomNav가 trip id를 `?id=...`로 부착하므로 `/settle?id=...`를 정식 채택 (기존 문서의 `?tripId=...`는 오타). Phase 2 진입부에서 `useSearchParams().get("id")` 사용.
