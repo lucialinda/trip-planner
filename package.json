@@ -8,7 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "emulator": "firebase emulators:start --import=./emulator_data --export-on-exit=./emulator_data",
-    "seed:expenses": "node scripts/seed-expenses.mjs"
+    "seed:expenses": "node scripts/seed-expenses.mjs",
+    "seed:members": "node scripts/seed-members.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
