@@ -96,4 +96,21 @@
 - **Phase 3-B (2026-05-07)**:
   - `AddExpenseDialog`는 5섹션 단일 컴포넌트로 작성. 다이얼로그 열림 reset effect는 `react-hooks/set-state-in-effect` 룰을 만족하도록 `if (!open) return` 가드 + `eslint-disable` 주석으로 처리(`CreateTripDialog`와 동일 패턴).
   - **결제자 자동 잠금**: 결제자 select onChange에서 `setParticipants(prev => ({ ...prev, [uid]: true }))` 호출 — effect 안 거치고 핸들러로 처리해서 race 방지. 정산 인원 체크박스 `disabled={uid === paidByUid}`.
-  - **환율 흐름**: 통화 변경 시 `krwManuallyEdited=false`로 리셋하고 `rate`를 `null`(또는 KRW면 1)로 초기화. `localAmount` 변경 시 400ms debounce로 `fetchKrwRate` → 성공하면 `Math.round(amount * rate)`로 KRW 자동입력. 사용자가 KRW 칸을 직접 수정하면 `krwManuallyEdited=true`가 켜져서 자동 동기화 차단. 
+  - **환율 흐름**: 통화 변경 시 `krwManuallyEdited=false`로 리셋하고 `rate`를 `null`(또는 KRW면 1)로 초기화. `localAmount` 변경 시 400ms debounce로 `fetchKrwRate` → 성공하면 `Math.round(amount * rate)`로 KRW 자동입력. 사용자가 KRW 칸을 직접 수정하면 `krwManuallyEdited=true`가 켜져서 자동 동기화 차단. 작은 "자동 환산으로 되돌리기" 링크로 다시 ON 가능.
+  - **환율 실패**: 토스트 + KRW 입력칸은 그대로 활성. `rateError` 상태 시 환율 표시줄에 rose 컬러 안내. 저장 시 `rate`가 null이면 `krwNum/localNum`으로 역산해서 Firestore에 저장(0 division 가드).
+  - **Firestore write**: `addDoc(collection(db, "trips", tripId, "expenses"), { ..., status: "tentative", participants: { ..., [paidByUid]: true }, paidAt: Timestamp.fromDate(...), createdAt/updatedAt: serverTimestamp() })`. `localAmount`는 그대로, `krwAmount`는 `Math.round` 후 저장.
+  - **props**: `enabledCategories` / `enabledCurrencies` / `defaultCurrency` 옵셔널 prop으로 받되 기본값은 전체 카테고리 / `["KRW", "JPY"]` / 첫 비-KRW. Phase 4 settings 도입 시 그대로 prop만 연결하면 됨.
+  - **3-C에서 할 일**: `src/app/settle/page.tsx`의 FAB onClick을 `setAddOpen(true)`로 연결 + `<AddExpenseDialog open={...} onOpenChange={setAddOpen} tripId={tripId} members={trip.members} />` 마운트. 통합 동작 확인 후 PROGRESS.md FAB 항목 [x].
+
+- **Phase 3-A (2026-05-07)**:
+  - `src/lib/currencies.ts`에 `getCurrencyMeta(code)` (없으면 KRW fallback)와 `formatCurrencyAmount(amount, code)` 헬퍼를 추가. AddExpenseDialog뿐만 아니라 EditExpenseDialog/리스트에서도 재사용 예정.
+  - `src/lib/exchangeRate.ts`에 동시 호출 dedup용 `inflight` Map과 `getCachedKrwRate(local)` 동기 조회 헬퍼 추가. 다이얼로그가 열릴 때 직전 통화 캐시 hit이면 즉시 표시하고, miss일 때만 비동기 fetch + 스켈레톤.
+  - `tsc --noEmit` 에러 없음 (npm notice만 출력).
+
+- **2026-05-05 보강 (Phase 2/3/7 합의)**:
+  - **트립 컨텍스트 파라미터 정정**: BottomNav가 trip id를 `?id=...`로 부착하므로 `/settle?id=...`를 정식 채택 (기존 문서의 `?tripId=...`는 오타). Phase 2 진입부에서 `useSearchParams().get("id")` 사용.
+  - **expenses 스키마에 `participants` 필드 추가**: `{ [uid]: true }` 맵. 미존재 시 마이그레이션 fallback으로 멤버 전원 `participants`로 간주 (1/n 분담 = `krwAmount / memberCount`).
+  - **AddExpenseDialog는 5섹션**: 카테고리 / 설명 / 금액(통화·환율) / 결제자·결제 일시 / **정산 인원**. 결제자는 정산 인원에 자동 체크되고 체크 해제 불가.
+  - **정산 요청 흐름**: 헤더 우측 점세개 메뉴 → "정산 요청" 진입 (또는 별도 ✓ 아이콘 버튼). 진입 시 리스트 항목에 체크박스 노출, 미정산 항목 기본 노출. 하단 sticky 액션바에 "선택된 N건 — 정산 메시지 만들기" 버튼.
+  - **메시지 공유**: `navigator.share({ title, text })` 사용. 실패/미지원 시 `navigator.clipboard.writeText()` + 토스트 "정산 메시지가 복사되었어요"로 fallback. 카톡 SDK 별도 연동 안 함 (시스템 공유시트가 카톡을 옵션으로 띄움).
+  - **정산완료 자동 표시**: 다이얼로그 하단 "보낸 항목 정산완료로 표시" 체크박스(기본 ON). 공유 성공/취소와 무관하게 사용자가 `공유` 또는 `복사` 버튼을 눌렀을 때 선택 항목들 `status`를 `confirmed`로 `writeBatch` 일괄 업데이트. `confirmedKrwAmount`는 `krwAmount`로 복제, `confirmedRate`는 `rate`로 복제 (편집은 추후 가능).
