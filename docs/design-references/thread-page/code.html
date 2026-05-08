@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Threads - Travel Feed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            "colors": {
+                    "primary-fixed": "#c8eaff",
+                    "surface-variant": "#f1f5f9",
+                    "primary": "#0ea5e9",
+                    "on-primary": "#ffffff",
+                    "tertiary-fixed-dim": "#c8a0f0",
+                    "surface-container-lowest": "#ffffff",
+                    "tertiary": "#7c3aed",
+                    "surface-container-high": "#f8fafc",
+                    "on-primary-fixed-variant": "#004d73",
+                    "tertiary-fixed": "#e8d0ff",
+                    "on-secondary-container": "#1e293b",
+                    "secondary-fixed-dim": "#88b4cc",
+                    "error-container": "#fee2e2",
+                    "on-surface-variant": "#64748b",
+                    "on-secondary": "#ffffff",
+                    "on-primary-container": "#082f49",
+                    "inverse-surface": "#1e293b",
+                    "secondary-container": "#e2e8f0",
+                    "primary-container": "#e0f2fe",
+                    "surface-dim": "#f8fafc",
+                    "on-error": "#ffffff",
+                    "surface-tint": "#0ea5e9",
+                    "primary-fixed-dim": "#7dd3fc",
+                    "on-secondary-fixed-variant": "#2a4a5e",
+                    "on-error-container": "#991b1b",
+                    "inverse-primary": "#7dd3fc",
+                    "secondary": "#475569",
+                    "surface-container-low": "#f1f5f9",
+                    "surface-bright": "#ffffff",
+                    "on-surface": "#0f172a",
+                    "on-tertiary-fixed-variant": "#4d2a73",
+                    "surface-container-highest": "#e2e8f0",
+                    "error": "#ef4444",
+                    "background": "#f8fafc",
+                    "secondary-fixed": "#c0d8e8",
+                    "on-tertiary": "#ffffff",
+                    "outline-variant": "#e2e8f0",
+                    "on-primary-fixed": "#001f2e",
+                    "inverse-on-surface": "#f8fafc",
+                    "on-tertiary-fixed": "#1a002e",
+                    "tertiary-container": "#f5f3ff",
+                    "surface-container": "#ffffff",
+                    "surface": "#ffffff",
+                    "on-tertiary-container": "#2e1065",
+                    "on-background": "#0f172a",
+                    "outline": "#cbd5e1",
+                    "on-secondary-fixed": "#0d1f2b"
+            },
+            "borderRadius": {
+                    "DEFAULT": "0.75rem",
+                    "lg": "1rem",
+                    "xl": "1.5rem",
+                    "full": "9999px"
+            },
+            "fontFamily": {
+                    "headline": ["Inter"],
+                    "display": ["Inter"],
+                    "body": ["Inter"],
+                    "label": ["Inter"]
+            }
+          },
+        },
+      }
+    </script>
+<style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .glass-card {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(14, 165, 233, 0.1);
+        }
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .pb-safe {
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+    </style>
+</head>
+<body class="text-on-surface bg-background">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-white/70 backdrop-blur-xl border-b border-sky-100 shadow-sm">
+<div class="flex justify-between items-center px-4 h-16 w-full max-w-2xl mx-auto">
+<button class="text-secondary hover:bg-sky-50 transition-colors p-2 rounded-full active:scale-95">
+<span class="material-symbols-outlined">menu</span>
+</button>
+<h1 class="text-xl font-bold text-primary font-inter tracking-tight">Threads</h1>
+<button class="text-primary font-inter font-semibold tracking-tight hover:bg-sky-50 px-4 py-1.5 rounded-full active:scale-95 transition-transform">
+            Write
+        </button>
+</div>
+</header>
+<!-- Main Content Canvas -->
+<main class="pt-20 pb-28 px-4 max-w-2xl mx-auto space-y-4">
+<!-- Post 1: Image Post -->
+<article class="glass-card p-4 rounded-xl shadow-sm">
+<div class="flex gap-3">
+<div class="flex-shrink-0">
+<img alt="User Avatar" class="w-12 h-12 rounded-full object-cover border border-sky-100" data-alt="A portrait of a smiling young woman with sun-kissed skin and messy hair, wearing a linen shirt. She is standing on a high-altitude balcony overlooking a blurred Mediterranean coastline at sunset." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCk3nhN4qg1smzaNWJgIYpFLLcmWAMmWQeS2TXyAjJNoiRro3lnGd-yar4qm_m-xClYG9_uOgvjaN3Vr9xFrfO2S_4eu-9s5gDGzsTJ1wCXZEkT8oIJ0EawAfK-67vX3QFvTELl2Vb__UODK0eqfwCT8281x6RrubQYL4BAalJsRtbBtCniP0zPLE_tlcLirawkJM4WX8F_yIpYk0OQeFtItiLkuJREIdSfh1_86Sp6kP02AfhrbYR10doAcAutDeODoTz3CVbZ718"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<div class="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+<span class="font-bold text-on-surface truncate">Traveler Jane</span>
+<span class="text-on-surface-variant text-sm">@jane_trips • 2h ago</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant cursor-pointer">more_horiz</span>
+</div>
+<p class="mt-2 text-on-surface leading-relaxed">
+                    Finally reached the peak of the Amalfi Coast trails. The view from Ravello is absolutely breathtaking! 🌊 If you're visiting, make sure to come early to avoid the crowds.
+                </p>
+<div class="mt-3 overflow-hidden rounded-xl border border-sky-100">
+<img alt="Amalfi Coast" class="w-full aspect-[4/3] object-cover" data-alt="A panoramic wide-angle shot of the Amalfi Coast in Italy, showing colorful cliffside houses cascading down to a vibrant turquoise Mediterranean sea." src="https://lh3.googleusercontent.com/aida-public/AB6AXuCv6qjw20sZxuLdYOCiZpzRtSAx0CfmpuoXcZlSIY4vPL0zYLGtXKE47rMKaFL6l7MTzwvSzkWMwSdwVYPdUxktBZBBea3-Y4LgDguJ1ureHvk-XKP_qAfxv4a5M68tCV7hbHx03Od9XDhDiK2lvjI9E6acBRaER6ceX5ZgJZIg93igw96Jespvpea659QhZ17rZApg-k_Qa3cmTQ_fKIZhAEpYF2cuHus-3MEJcCq74QTVhigcd-K2sXa2Gtg8Wyqosvy9ojtxKeg"/>
+</div>
+<!-- Interaction Row -->
+<div class="mt-4 flex justify-between items-center max-w-sm text-on-surface-variant">
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[20px]">comment</span>
+<span class="text-xs">24</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[20px]">recycling</span>
+<span class="text-xs">12</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-error transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[20px]">favorite</span>
+<span class="text-xs">156</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors active:scale-95">
+<span class="material-symbols-outlined text-[20px]">share</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+<!-- Post 2: Text Only -->
+<article class="glass-card p-4 rounded-xl shadow-sm">
+<div class="flex gap-3">
+<div class="flex-shrink-0">
+<img alt="User Avatar" class="w-12 h-12 rounded-full object-cover border border-sky-100" data-alt="A close-up portrait of a professional male traveler with a groomed beard and stylish spectacles." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDUCZkn197a9a76FowFHSEgm_dlJcd7BYBTNRk5mXX_v_-4y13Lu94-GBqSUuhpdVmEVtcEyPH-WZPQZ1aDUe33n3fd8Zi5hHMeN_WJCjpw7Pa4h_w1Z3xrNXJNDz80GRCkwSfJdqytk-KKMgaRNbqFaovXxMTOrH7fhYVIvJh231pqK1vDM9fhlrOa55FXjQPLR3_7DEWC_7UFnrAQsRpHwjsw4-_kWXIAeiayVyTYPiQqclcqpjITcgdrrgJEsyGr8QeiZLmyO1M"/>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<div class="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+<span class="font-bold text-on-surface truncate">Marcus Wander</span>
+<span class="text-on-surface-variant text-sm">@marcus_w • 4h ago</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">more_horiz</span>
+</div>
+<p class="mt-2 text-on-surface leading-relaxed">
+                    Pro tip for solo travelers: always carry a physical map and a battery pack. Google Maps is great until your battery dies in the middle of Shinjuku at 2 AM. Ask me how I know... 😅 #traveltips #tokyo
+                </p>
+<!-- Interaction Row -->
+<div class="mt-4 flex justify-between items-center max-w-sm text-on-surface-variant">
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">comment</span>
+<span class="text-xs">8</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">recycling</span>
+<span class="text-xs">4</span>
+</button>
+<button class="flex items-center gap-1.5 text-error transition-colors">
+<span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">favorite</span>
+<span class="text-xs">42</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">share</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+<!-- Post 3: Food Image -->
+<article class="glass-card p-4 rounded-xl shadow-sm">
+<div class="flex gap-3">
+<div class="flex-shrink-0">
+<div class="w-12 h-12 rounded-full bg-tertiary-container flex items-center justify-center border border-tertiary/10">
+<span class="material-symbols-outlined text-tertiary">restaurant</span>
+</div>
+</div>
+<div class="flex-1 min-w-0">
+<div class="flex items-center justify-between">
+<div class="flex flex-col sm:flex-row sm:items-center sm:gap-2">
+<span class="font-bold text-on-surface truncate">Gourmet Globe</span>
+<span class="text-on-surface-variant text-sm">@foodie_travels • 6h ago</span>
+</div>
+<span class="material-symbols-outlined text-on-surface-variant">more_horiz</span>
+</div>
+<p class="mt-2 text-on-surface leading-relaxed">
+                    The best ramen I've ever had, found in a tiny basement shop in Kyoto. The broth was aged for 48 hours. Pure magic in a bowl! 🍜
+                </p>
+<div class="mt-3 overflow-hidden rounded-xl border border-sky-100">
+<img alt="Kyoto Ramen" class="w-full aspect-video object-cover" data-alt="A highly detailed close-up of a steaming bowl of Japanese tonkotsu ramen with perfectly placed soft-boiled eggs, nori, and chashu pork." src="https://lh3.googleusercontent.com/aida-public/AB6AXuDHurODLhw20SHb4P622AV6dGhgS9V1-Gx5lDrWqGKCYWeHPToNxzU-KByDJUWMvslvuTzGZ-ns6nb_Z62JWPxUbfUnPepUIHspsphr8p4kMqtyzQdsl0aKaqO3s7m1O8gQ5--ukoD0_Vlgpbo-lFKElF4VS2_esVcbgrVOsDTMhLFBRpYPzEtHU4vVxWj8wQT958POqkaaAZDCqJZXhxjcG3yilUbSNwgTGBV6eSd2AfjxMNQPha7agGPFIBNNZX4wc8DUNPJqm58"/>
+</div>
+<!-- Interaction Row -->
+<div class="mt-4 flex justify-between items-center max-w-sm text-on-surface-variant">
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">comment</span>
+<span class="text-xs">15</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">recycling</span>
+<span class="text-xs">9</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-error transition-colors">
+<span class="material-symbols-outlined text-[20px]">favorite</span>
+<span class="text-xs">210</span>
+</button>
+<button class="flex items-center gap-1.5 hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-[20px]">share</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 border-t border-sky-100 bg-white/80 backdrop-blur-2xl shadow-lg">
+<div class="flex justify-around items-center h-20 pb-safe w-full max-w-2xl mx-auto">
+<!-- Trips -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">explore</span>
+<span class="font-inter text-[10px] font-medium mt-0.5">Trips</span>
+</a>
+<!-- Expenses -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">payments</span>
+<span class="font-inter text-[10px] font-medium mt-0.5">Expenses</span>
+</a>
+<!-- Threads (Active) -->
+<a class="flex flex-col items-center justify-center text-primary bg-primary/10 rounded-xl px-4 py-2 active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">forum</span>
+<span class="font-inter text-[10px] font-bold mt-0.5">Threads</span>
+</a>
+<!-- Profile -->
+<a class="flex flex-col items-center justify-center text-on-surface-variant hover:text-primary active:scale-90 transition-all" href="#">
+<span class="material-symbols-outlined">person</span>
+<span class="font-inter text-[10px] font-medium mt-0.5">Profile</span>
+</a>
+</div>
+</nav>
+</body></html>
