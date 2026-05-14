@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
+import { addDoc, collection, doc, deleteDoc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { toast } from "sonner";
 
 import { db } from "@/lib/firebase";
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CATEGORY_META,
+  type Expense,
   type ExpenseCategory,
 } from "@/lib/expenses";
 import {
@@ -50,6 +51,10 @@ export interface AddExpenseDialogProps {
   tripId: string;
   /** trip.members ({ uid: displayName }) */
   members: Record<string, string>;
+  /** 수정 모드: 기존 지출 데이터를 넣으면 편집 다이얼로그로 동작 */
+  editingExpense?: Expense | null;
+  /** 수정 모드에서 삭제 콜백 */
+  onDeleted?: () => void;
   /** Phase 4 settings 도입 전이라 기본은 전체 카테고리. */
   enabledCategories?: ExpenseCategory[];
   /** Phase 4 settings 도입 전이라 기본은 KRW + JPY. */
@@ -83,6 +88,8 @@ export function AddExpenseDialog({
   onOpenChange,
   tripId,
   members,
+  editingExpense = null,
+  onDeleted,
   enabledCategories = ALL_CATEGORIES,
   enabledCurrencies = ["KRW", "JPY"],
   defaultCurrency,
@@ -109,30 +116,49 @@ export function AddExpenseDialog({
   const [paidAtLocal, setPaidAtLocal] = useState<string>("");
   const [participants, setParticipants] = useState<Record<string, true>>({});
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const isEditMode = !!editingExpense;
 
   // ---------- 다이얼로그 열릴 때 초기화 ----------
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     if (!open) return;
-    const me = user?.uid ?? memberUids[0] ?? "";
-    setCategory(null);
-    setDescription("");
-    setLocalCurrency(initialCurrency);
-    setLocalAmount("");
-    setKrwAmount("");
-    setKrwManuallyEdited(false);
-    setRate(initialCurrency === "KRW" ? 1 : getCachedKrwRate(initialCurrency) ?? null);
-    setRateLoading(false);
-    setRateError(false);
-    setPaidByUid(me);
-    setPaidAtLocal(toDatetimeLocalValue(new Date()));
-    // 정산 인원: 멤버 전원 기본 체크
-    const init: Record<string, true> = {};
-    for (const uid of memberUids) init[uid] = true;
-    setParticipants(init);
+    if (editingExpense) {
+      // 수정 모드: 기존 데이터로 채우기
+      setCategory(editingExpense.category);
+      setDescription(editingExpense.description);
+      setLocalCurrency(editingExpense.localCurrency);
+      setLocalAmount(String(editingExpense.localAmount));
+      setKrwAmount(String(editingExpense.krwAmount));
+      setKrwManuallyEdited(false);
+      setRate(editingExpense.rate ?? null);
+      setRateLoading(false);
+      setRateError(false);
+      setPaidByUid(editingExpense.paidByUid);
+      setPaidAtLocal(toDatetimeLocalValue(editingExpense.paidAt));
+      setParticipants(editingExpense.participants ?? {});
+    } else {
+      // 추가 모드: 초기화
+      const me = user?.uid ?? memberUids[0] ?? "";
+      setCategory(null);
+      setDescription("");
+      setLocalCurrency(initialCurrency);
+      setLocalAmount("");
+      setKrwAmount("");
+      setKrwManuallyEdited(false);
+      setRate(initialCurrency === "KRW" ? 1 : getCachedKrwRate(initialCurrency) ?? null);
+      setRateLoading(false);
+      setRateError(false);
+      setPaidByUid(me);
+      setPaidAtLocal(toDatetimeLocalValue(new Date()));
+      const init: Record<string, true> = {};
+      for (const uid of memberUids) init[uid] = true;
+      setParticipants(init);
+    }
     setSaving(false);
+    setDeleting(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, user, memberUids, initialCurrency]);
+  }, [open, editingExpense, user, memberUids, initialCurrency]);
 
   // ---------- 환율 fetch (debounce) — KRW는 핸들러에서 직접 동기화하므로 비-KRW만 ----------
   useEffect(() => {
@@ -280,7 +306,7 @@ export function AddExpenseDialog({
 
     setSaving(true);
     try {
-      await addDoc(collection(db, "trips", tripId, "expenses"), {
+      const payload = {
         category,
         description: desc,
         paidByUid,
@@ -292,13 +318,25 @@ export function AddExpenseDialog({
         status: "tentative",
         paidAt: Timestamp.fromDate(paidAt),
         participants: finalParticipants,
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
-      toast.success("지출을 추가했어요.");
+      };
+
+      if (isEditMode && editingExpense) {
+        await updateDoc(
+          doc(db, "trips", tripId, "expenses", editingExpense.id),
+          payload,
+        );
+        toast.success("지출을 수정했어요.");
+      } else {
+        await addDoc(collection(db, "trips", tripId, "expenses"), {
+          ...payload,
+          createdAt: serverTimestamp(),
+        });
+        toast.success("지출을 추가했어요.");
+      }
       onOpenChange(false);
     } catch (e) {
-      console.error("[AddExpenseDialog] addDoc failed", e);
+      console.error("[AddExpenseDialog] save failed", e);
       toast.error("저장에 실패했어요. 다시 시도해주세요.");
     } finally {
       setSaving(false);
@@ -319,7 +357,7 @@ export function AddExpenseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md sm:max-w-md max-h-[90vh] overflow-y-auto rounded-xl">
         <DialogHeader>
-          <DialogTitle>지출 추가</DialogTitle>
+          <DialogTitle>{isEditMode ? "지출 수정" : "지출 추가"}</DialogTitle>
           <DialogDescription>
             결제한 항목을 기록하면 자동으로 1/n 정산이 계산돼요.
           </DialogDescription>
@@ -570,21 +608,46 @@ export function AddExpenseDialog({
 
         {/* footer */}
         <div className="flex gap-2 pt-4">
+          {isEditMode && (
+            <Button
+              variant="outline"
+              className="text-destructive border-destructive/40 hover:bg-destructive/10"
+              onClick={async () => {
+                if (!editingExpense) return;
+                if (!confirm("이 지출을 삭제할까요?")) return;
+                setDeleting(true);
+                try {
+                  await deleteDoc(doc(db, "trips", tripId, "expenses", editingExpense.id));
+                  toast.success("지출을 삭제했어요.");
+                  onOpenChange(false);
+                  onDeleted?.();
+                } catch (e) {
+                  console.error(e);
+                  toast.error("삭제에 실패했어요.");
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              disabled={saving || deleting}
+            >
+              {deleting ? <Loader2 className="w-4 h-4 animate-spin" /> : "삭제"}
+            </Button>
+          )}
           <Button
             variant="outline"
             className="flex-1"
             onClick={() => onOpenChange(false)}
-            disabled={saving}
+            disabled={saving || deleting}
           >
             취소
           </Button>
           <Button
             className="flex-1"
             onClick={handleSave}
-            disabled={saving}
+            disabled={saving || deleting}
           >
             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            저장
+            {isEditMode ? "수정 완료" : "저장"}
           </Button>
         </div>
       </DialogContent>

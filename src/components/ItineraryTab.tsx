@@ -94,6 +94,62 @@ function todayIso() {
   return d.toISOString().split("T")[0];
 }
 
+// ── 상태 감지 ──────────────────────────────────────────────────────────────────
+
+type PlaceStatus = "booked" | "check" | "reminder" | "ongoing" | "done" | null;
+
+function getPlaceStatus(place: Place, todayStr: string): PlaceStatus {
+  const name = place.name || "";
+  const note = place.note || "";
+  // 예약완료
+  if (name.includes("✅") || name.includes("예약완료") || note.includes("예약번호") || note.includes("예약 번호")) {
+    // 이미 지난 날짜면 완료
+    if (place.date < todayStr) return "done";
+    return "booked";
+  }
+  // 오늘 일정 중 시간이 지난 것
+  if (place.date < todayStr) return "done";
+  // 확인필요 — ⚠️ + 실제 액션 필요 키워드 있을 때만
+  const hasWarning = note.includes("⚠️") || name.includes("⚠️");
+  const needsAction = /(필수|예약 필요|예약필요|구매 필요|구매필요|발급|신청)/.test(note) ||
+                      /(필수|예약 필요|예약필요)/.test(name);
+  if (hasWarning && needsAction) return "check";
+  // 중요 알림 — ⚠️는 있지만 액션까지는 아닌 것 (체크아웃, 출발, 짐 등)
+  if (hasWarning) return "reminder";
+  return null;
+}
+
+function statusMeta(status: PlaceStatus) {
+  switch (status) {
+    case "booked":   return { label: "예약완료", color: "bg-emerald-100 text-emerald-700" };
+    case "check":    return { label: "확인필요", color: "bg-red-100 text-red-600" };
+    case "reminder": return { label: "★ 중요",   color: "bg-yellow-100 text-yellow-700" };
+    case "ongoing":  return { label: "진행중",   color: "bg-violet-100 text-violet-700" };
+    case "done":     return { label: "완료",     color: "bg-slate-100 text-slate-500" };
+    default:         return null;
+  }
+}
+
+// ── 예약번호/주소 파싱 ──────────────────────────────────────────────────────────
+
+function extractBookingNumber(note: string): string | null {
+  const match = note.match(/예약번호[:\s：]*([A-Z0-9\-]+)/);
+  return match ? match[1] : null;
+}
+
+function extractAddress(note: string): string | null {
+  // 주소 패턴: 숫자+도로명, Boulevard, Rua, route, Calçada 등
+  const patterns = [
+    /[\w\s]*(Boulevard|Rua|Calçada|route|Route|Street|Ave)[^\n,]+/,
+    /\d+[^\n,]*\d{4,5}[^\n]*/,  // 우편번호 패턴
+  ];
+  for (const p of patterns) {
+    const m = note.match(p);
+    if (m) return m[0].trim();
+  }
+  return null;
+}
+
 function placeStartTime(place: Place) {
   return (place.startTime || place.time || "").trim();
 }
@@ -483,6 +539,24 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
       : null
     : null;
 
+  // 다음 일정 계산 (오늘 이후 가장 가까운 일정)
+  const nextPlace = useMemo(() => {
+    const nowTime = new Date().toTimeString().slice(0, 5); // "HH:MM"
+    // 오늘 아직 안 지난 일정 먼저
+    const todayUpcoming = (placesByDate[today] || []).find((p) => {
+      const st = placeStartTime(p);
+      return !st || st > nowTime;
+    });
+    if (todayUpcoming) return { place: todayUpcoming, isToday: true };
+    // 미래 날짜 중 가장 이른 일정
+    const futureDates = Object.keys(placesByDate).filter((d) => d > today).sort();
+    for (const d of futureDates) {
+      const ps = placesByDate[d];
+      if (ps && ps.length > 0) return { place: ps[0], isToday: false };
+    }
+    return null;
+  }, [placesByDate, today]);
+
   const closeAllSwipes = (exceptId?: string) => {
     swipeRefs.current.forEach((handle, id) => {
       if (id !== exceptId) handle?.close();
@@ -620,6 +694,45 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
 
   return (
     <div className="pb-32 relative">
+
+      {/* 다음 일정 배너 */}
+      {nextPlace && (() => {
+        const place = nextPlace.place;
+        const startT = placeStartTime(place);
+        const endT = placeEndTime(place);
+        // D-day 계산
+        const todayMs = new Date(today).getTime();
+        const placeMs = new Date(place.date).getTime();
+        const diffDays = Math.round((placeMs - todayMs) / (1000 * 60 * 60 * 24));
+        const dLabel = diffDays > 0 ? `D-${diffDays}` : diffDays === 0 ? "오늘" : null;
+        // 시간 표시: 출발=도착이면 "출발 HH:MM"
+        const timeDisplay = startT && endT && startT === endT
+          ? `출발 ${startT}`
+          : startT && endT
+          ? `${startT} ~ ${endT}`
+          : startT || "";
+
+        return (
+          <div className="mx-4 mb-4 rounded-xl bg-primary text-white px-4 py-3 flex items-center gap-3 shadow-md shadow-primary/20">
+            <span className="material-symbols-outlined text-white/80 flex-shrink-0" style={{ fontVariationSettings: "'FILL' 1" }}>
+              {nextPlace.isToday ? "play_circle" : "event"}
+            </span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-white/70 mb-0.5">
+                {nextPlace.isToday ? "오늘 다음 일정" : "다음 일정"}
+              </p>
+              <p className="font-bold text-sm truncate">
+                {place.name.replace(/^[\p{Emoji}\u2705\u26a0\ufe0f\s]+/u, "").trim()}
+              </p>
+              <p className="text-[11px] text-white/80 mt-0.5">
+                {dLabel && <span className="font-bold mr-1.5">{dLabel}</span>}
+                {timeDisplay}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Day 섹션들 */}
       {dates.map((date, index) => {
         const dayPlaces = placesByDate[date] || [];
@@ -627,7 +740,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
 
         return (
           <section key={date} className="mb-8">
-            <div className="text-sm font-bold mb-3 flex items-center justify-between">
+            <div className="text-sm font-bold mb-3 flex items-center gap-2">
               <span className={isToday ? "text-tertiary" : "text-primary"}>
                 {isToday && (
                   <span className="inline-block w-1.5 h-1.5 rounded-full bg-tertiary animate-pulse mr-1.5 align-middle" />
@@ -636,17 +749,32 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
               </span>
               {dayPlaces.length > 0 && (
                 <span className="text-[11px] font-medium text-on-surface-variant">
-                  {dayPlaces.length}개
+                  · 일정 {dayPlaces.length}개
                 </span>
               )}
             </div>
 
-            <div className="space-y-2">
+            <div className="space-y-2 relative pl-4 border-l-2 border-slate-100 ml-2">
               {dayPlaces.map((place, pIdx) => {
                 const canManage = place.addedByUid === user?.uid;
                 const highlight = isToday && pIdx === 0;
-                const timeLabel = formatPlaceTime(place);
+                const startT = placeStartTime(place);
+                const endT = placeEndTime(place);
+                // 출발=도착 같으면 "출발 HH:MM", 다르면 "HH:MM ~ HH:MM"
+                const timeLabel = startT && endT && startT === endT
+                  ? `출발 ${startT}`
+                  : formatPlaceTime(place);
                 const placeLink = parsePlaceLink(place.placeUrl || "");
+                const status = getPlaceStatus(place, today);
+                const statusInfo = statusMeta(status);
+                const bookingNum = extractBookingNumber(place.note || "");
+                const address = extractAddress(place.note || "");
+                // 제목에서 이모지/체크 제거
+                const cleanName = place.name
+                  .replace(/^[\p{Emoji}\u2705\u26a0\ufe0f\s]+/u, "")  // 앞 이모지 제거
+                  .replace(/\s*✅\s*예약완료\s*/g, "")                  // ✅예약완료 제거
+                  .replace(/\s*✅/g, "")                                // 남은 ✅ 제거
+                  .trim();
 
                 const cardContent = (
                   <div
@@ -672,10 +800,15 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
 
                     {/* 본문 */}
                     <div className="flex-grow min-w-0">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold text-on-surface leading-tight truncate">
-                          {place.name}
+                      <div className="flex items-center gap-1.5">
+                        <h3 className="font-semibold text-on-surface leading-tight min-w-0 truncate">
+                          {cleanName}
                         </h3>
+                        {statusInfo && (
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0 whitespace-nowrap ${statusInfo.color}`}>
+                            {statusInfo.label}
+                          </span>
+                        )}
                       </div>
                       {timeLabel && (
                         <div className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant">
@@ -706,9 +839,65 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                                 className: "text-primary hover:underline",
                               }}
                             >
-                              {place.note}
+                              {status === "reminder"
+                                ? place.note.split("\n").map((line, i) => (
+                                    <span key={i} className="block">
+                                      {line.startsWith("⚠️") ? (
+                                        <>
+                                          <span className="font-bold text-yellow-500">★</span>
+                                          {line.slice(2)}
+                                        </>
+                                      ) : line}
+                                    </span>
+                                  ))
+                                : status === "check"
+                                ? place.note.split("\n").map((line, i) => (
+                                    <span key={i} className="block">
+                                      {line.startsWith("⚠️") ? (
+                                        <>
+                                          <span className="font-bold text-red-500">!</span>
+                                          {line.slice(2)}
+                                        </>
+                                      ) : line}
+                                    </span>
+                                  ))
+                                : place.note}
                             </Linkify>
                           </span>
+                        </div>
+                      )}
+
+                      {/* 복사 액션 버튼 */}
+                      {(bookingNum || address) && (
+                        <div className="flex flex-wrap gap-1.5 mt-2">
+                          {bookingNum && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(bookingNum);
+                                toast.success(`예약번호 복사됨: ${bookingNum}`);
+                              }}
+                              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-sm">content_copy</span>
+                              예약번호 {bookingNum}
+                            </button>
+                          )}
+                          {address && (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigator.clipboard.writeText(address);
+                                toast.success("주소 복사됨!");
+                              }}
+                              className="flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors"
+                            >
+                              <span className="material-symbols-outlined text-sm">location_on</span>
+                              주소 복사
+                            </button>
+                          )}
                         </div>
                       )}
                     </div>
