@@ -12,12 +12,12 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useEffect } from "react";
 import {
-  arrayUnion,
   collection,
   doc,
   getDoc,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -34,6 +34,7 @@ interface CreateTripDialogProps {
   onOpenChange: (open: boolean) => void;
   defaultMode?: Mode;
   defaultCode?: string;
+  canCreate?: boolean;
 }
 
 export function CreateTripDialog({
@@ -41,6 +42,7 @@ export function CreateTripDialog({
   onOpenChange,
   defaultMode = "create",
   defaultCode,
+  canCreate = true,
 }: CreateTripDialogProps) {
   const { user } = useAuth();
   const router = useRouter();
@@ -61,20 +63,24 @@ export function CreateTripDialog({
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     if (open) {
-      setMode(defaultCode ? "join" : defaultMode);
+      setMode(defaultCode || !canCreate ? "join" : defaultMode);
       setCode(defaultCode || "");
     } else {
       setName("");
       setStart("");
       setEnd("");
       setCode("");
-      setMode(defaultMode);
+      setMode(canCreate ? defaultMode : "join");
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, defaultMode, defaultCode]);
+  }, [open, defaultMode, defaultCode, canCreate]);
 
   const handleCreate = async () => {
     if (!user) return;
+    if (!canCreate) {
+      toast.error("여행 생성은 관리자만 가능합니다.");
+      return;
+    }
     if (!name || !start || !end) {
       toast.error("여행 이름과 날짜를 입력해주세요.");
       return;
@@ -130,14 +136,21 @@ export function CreateTripDialog({
       }
       const tripId = codeSnap.data().tripId;
       const tripRef = doc(db, "trips", tripId);
-      await setDoc(
-        tripRef,
-        {
-          [`members.${user.uid}`]: user.displayName || "익명",
-          memberUids: arrayUnion(user.uid),
+      const tripSnap = await getDoc(tripRef);
+      if (!tripSnap.exists()) {
+        toast.error("여행을 찾을 수 없습니다.");
+        return;
+      }
+      const tripData = tripSnap.data();
+      const memberUids = Array.isArray(tripData.memberUids) ? tripData.memberUids : [];
+      const members = tripData.members && typeof tripData.members === "object" ? tripData.members : {};
+      await updateDoc(tripRef, {
+        members: {
+          ...members,
+          [user.uid]: user.displayName || "익명",
         },
-        { merge: true }
-      );
+        memberUids: memberUids.includes(user.uid) ? memberUids : [...memberUids, user.uid],
+      });
 
       toast.success("여행에 참가했어요!");
       onOpenChange(false);
@@ -155,74 +168,80 @@ export function CreateTripDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-sm rounded-xl">
         <DialogHeader>
-          <DialogTitle>새 여행</DialogTitle>
+          <DialogTitle>{canCreate ? "새 여행" : "여행 참가"}</DialogTitle>
           <DialogDescription>
-            새로운 여행을 만들거나, 친구가 공유한 코드로 참가할 수 있어요.
+            {canCreate
+              ? "새로운 여행을 만들거나, 친구가 공유한 코드로 참가할 수 있어요."
+              : "친구가 공유한 코드로 여행에 참가할 수 있어요."}
           </DialogDescription>
         </DialogHeader>
 
         <Tabs value={mode} onValueChange={(v) => setMode(v as Mode)} className="mt-2">
           <TabsList className="w-full">
-            <TabsTrigger value="create" className="flex-1">
-              새로 만들기
-            </TabsTrigger>
+            {canCreate && (
+              <TabsTrigger value="create" className="flex-1">
+                새로 만들기
+              </TabsTrigger>
+            )}
             <TabsTrigger value="join" className="flex-1">
               코드로 참가
             </TabsTrigger>
           </TabsList>
 
           {/* Create */}
-          <TabsContent value="create" className="space-y-4 pt-4">
-            <div>
-              <label className="text-sm font-semibold text-muted-foreground mb-1 block">
-                여행 이름
-              </label>
-              <Input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="예: 파리 7박8일"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-muted-foreground mb-1 block">
-                출발일
-              </label>
-              <Input
-                type="date"
-                value={start}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  setStart(val);
-                  if (!end || end < val) setEnd(val);
-                }}
-              />
-            </div>
-            <div>
-              <label className="text-sm font-semibold text-muted-foreground mb-1 block">
-                귀국일
-              </label>
-              <Input
-                type="date"
-                min={start}
-                value={end}
-                onChange={(e) => setEnd(e.target.value)}
-              />
-            </div>
-            <div className="flex gap-2 pt-2">
-              <Button
-                variant="outline"
-                className="flex-1"
-                onClick={() => onOpenChange(false)}
-                disabled={loading}
-              >
-                취소
-              </Button>
-              <Button className="flex-1" onClick={handleCreate} disabled={loading}>
-                {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-                만들기
-              </Button>
-            </div>
-          </TabsContent>
+          {canCreate && (
+            <TabsContent value="create" className="space-y-4 pt-4">
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                  여행 이름
+                </label>
+                <Input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="예: 파리 7박8일"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                  출발일
+                </label>
+                <Input
+                  type="date"
+                  value={start}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setStart(val);
+                    if (!end || end < val) setEnd(val);
+                  }}
+                />
+              </div>
+              <div>
+                <label className="text-sm font-semibold text-muted-foreground mb-1 block">
+                  귀국일
+                </label>
+                <Input
+                  type="date"
+                  min={start}
+                  value={end}
+                  onChange={(e) => setEnd(e.target.value)}
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <Button
+                  variant="outline"
+                  className="flex-1"
+                  onClick={() => onOpenChange(false)}
+                  disabled={loading}
+                >
+                  취소
+                </Button>
+                <Button className="flex-1" onClick={handleCreate} disabled={loading}>
+                  {creating && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  만들기
+                </Button>
+              </div>
+            </TabsContent>
+          )}
 
           {/* Join */}
           <TabsContent value="join" className="space-y-4 pt-4">

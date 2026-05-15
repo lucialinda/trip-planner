@@ -1,6 +1,14 @@
 rules_version = '2';
 service firebase.storage {
   match /b/{bucket}/o {
+    function isAdmin() {
+      return request.auth != null
+        // Keep this list in sync with src/lib/admin.ts and firestore.rules.
+        && request.auth.uid in [
+          "xdiqN6R92NbFXjf2zB8y0xdTB0Ky"
+        ];
+    }
+
     match /profile-photos/{uid}/{allPaths=**} {
       allow read: if true;
       allow write: if request.auth != null
@@ -10,7 +18,7 @@ service firebase.storage {
     }
     match /trip-hero/{tripId}/{allPaths=**} {
       allow read: if true;
-      allow write: if request.auth != null
+      allow write: if isAdmin()
                    && request.resource.size < 3 * 1024 * 1024
                    && request.resource.contentType.matches('image/.*');
     }
