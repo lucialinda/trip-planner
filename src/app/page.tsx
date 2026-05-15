@@ -3,6 +3,7 @@
 import { useAuth } from "@/contexts/AuthContext";
 import { useState, useEffect, Suspense, useRef } from "react";
 import { db, storage } from "@/lib/firebase";
+import { isAdminUid } from "@/lib/admin";
 import { collection, query, where, onSnapshot, getDoc, doc, updateDoc } from "firebase/firestore";
 import { ref as storageRef, uploadBytes, getDownloadURL } from "firebase/storage";
 import { toast } from "sonner";
@@ -47,6 +48,7 @@ function HomeContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const urlJoinCode = searchParams.get("joinCode");
+  const isAdmin = isAdminUid(user?.uid);
 
   const [trips, setTrips] = useState<TripSummary[]>([]);
   const [profilePhoto, setProfilePhoto] = useState<string | null>(null);
@@ -213,7 +215,7 @@ function HomeContent() {
   };
 
   const handleHeroCropConfirm = async (blob: Blob) => {
-    if (!editingHeroTrip || !user) return;
+    if (!editingHeroTrip || !user || !isAdmin) return;
     setSavingHero(true);
     try {
       const fileRef = storageRef(storage, `trip-hero/${editingHeroTrip.id}/cover.jpg`);
@@ -243,6 +245,7 @@ function HomeContent() {
     trip: TripSummary
   ) => {
     e.stopPropagation();
+    if (!isAdmin) return;
     if (!confirm("대표 사진을 삭제할까요?")) return;
     try {
       await updateDoc(doc(db, "trips", trip.id), { heroPhotoURL: null });
@@ -393,7 +396,9 @@ function HomeContent() {
           <div className="glass-card rounded-xl p-8 text-center mt-2">
             <span className="material-symbols-outlined text-4xl text-primary/60 mb-2">luggage</span>
             <p className="text-on-surface font-semibold">아직 참가한 여행이 없어요</p>
-            <p className="text-sm text-on-surface-variant mt-1">아래 버튼으로 여행을 만들거나 코드로 참가해보세요</p>
+            <p className="text-sm text-on-surface-variant mt-1">
+              {isAdmin ? "아래 버튼으로 여행을 만들거나 코드로 참가해보세요" : "아래 버튼으로 초대 코드로 참가해보세요"}
+            </p>
           </div>
         ) : (
           <div className="space-y-4 mt-2">
@@ -444,7 +449,7 @@ function HomeContent() {
                         {t.startDate} ~ {t.endDate}
                       </p>
                     </div>
-                    {(!t.createdByUid || t.createdByUid === user.uid) && (
+                    {isAdmin && (
                       <div className="absolute right-4 top-4 flex shrink-0 gap-1.5">
                         <button
                           type="button"
@@ -512,17 +517,17 @@ function HomeContent() {
         <button
           type="button"
           onClick={() => {
-            setCreateDefaultMode("create");
+            setCreateDefaultMode(isAdmin ? "create" : "join");
             setCreateOpen(true);
           }}
-          aria-label="새 여행"
+          aria-label={isAdmin ? "새 여행" : "코드로 참가"}
           className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-90 pointer-events-auto"
         >
           <span
             className="material-symbols-outlined text-[28px]"
             style={{ fontVariationSettings: "'FILL' 1" }}
           >
-            add
+            {isAdmin ? "add" : "key"}
           </span>
         </button>
       </div>
@@ -547,6 +552,7 @@ function HomeContent() {
         onOpenChange={setCreateOpen}
         defaultMode={createDefaultMode}
         defaultCode={urlJoinCode || ""}
+        canCreate={isAdmin}
       />
     </div>
   );

@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useState, useEffect } from "react";
-import { arrayUnion, doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { useRouter } from "next/navigation";
@@ -24,8 +24,10 @@ export function JoinTripDialog({ open, onOpenChange, defaultCode }: JoinTripDial
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     if (open) setCode(defaultCode || "");
     else setCode("");
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, defaultCode]);
 
   const handleJoin = async () => {
@@ -45,19 +47,26 @@ export function JoinTripDialog({ open, onOpenChange, defaultCode }: JoinTripDial
       }
       const tripId = codeSnap.data().tripId;
       const tripRef = doc(db, "trips", tripId);
-      await setDoc(
-        tripRef,
-        {
-          [`members.${user.uid}`]: user.displayName || "익명",
-          memberUids: arrayUnion(user.uid),
+      const tripSnap = await getDoc(tripRef);
+      if (!tripSnap.exists()) {
+        toast.error("여행을 찾을 수 없습니다.");
+        return;
+      }
+      const tripData = tripSnap.data();
+      const memberUids = Array.isArray(tripData.memberUids) ? tripData.memberUids : [];
+      const members = tripData.members && typeof tripData.members === "object" ? tripData.members : {};
+      await updateDoc(tripRef, {
+        members: {
+          ...members,
+          [user.uid]: user.displayName || "익명",
         },
-        { merge: true }
-      );
+        memberUids: memberUids.includes(user.uid) ? memberUids : [...memberUids, user.uid],
+      });
 
       toast.success("여행에 참가했어요!");
       onOpenChange(false);
       router.push(`/trip?id=${tripId}`);
-    } catch (error) {
+    } catch {
       toast.error("참가 실패");
     } finally {
       setLoading(false);
