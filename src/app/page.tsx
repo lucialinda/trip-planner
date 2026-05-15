@@ -505,6 +505,49 @@ function HomeContent() {
           </div>
         )}
 
+        {/* 4인4색 멤버 섹션 */}
+        {trips.length > 0 && (() => {
+          const t = trips[0];
+          const memberList = Object.entries(t.members || {}) as [string, string][];
+          if (memberList.length === 0) return null;
+          const COLORS = [
+            { pill: "bg-sky-400/70",    bar: "from-sky-300 to-sky-500" },
+            { pill: "bg-indigo-400/70", bar: "from-indigo-300 to-indigo-500" },
+            { pill: "bg-amber-400/70",  bar: "from-amber-300 to-amber-500" },
+            { pill: "bg-rose-400/70",   bar: "from-rose-300 to-rose-500" },
+          ];
+          return (
+            <div className="mt-6">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-on-surface-variant/60 px-1 mb-3">우리 멤버</p>
+              <div className="grid grid-cols-2 gap-2.5">
+                {memberList.slice(0, 4).map(([uid, name], idx) => {
+                  const photo = memberPhotos[uid];
+                  const c = COLORS[idx % COLORS.length];
+                  return (
+                    <div key={uid} className="relative rounded-2xl overflow-hidden glass-card" style={{ aspectRatio: "3/4" }}>
+                      <div className={`absolute top-0 left-0 right-0 h-1 bg-gradient-to-r ${c.bar} z-10`} />
+                      {photo ? (
+                        <img src={photo} alt={name} className="w-full h-full object-cover object-top" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200">
+                          <span className="text-5xl font-black text-slate-300">{String(name).charAt(0)}</span>
+                        </div>
+                      )}
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent" />
+                      <div className="absolute bottom-3 left-3 right-3">
+                        <p className="text-white font-black text-base leading-tight drop-shadow">{name}</p>
+                        <span className={`inline-block mt-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold text-white border border-white/30 backdrop-blur-sm ${c.pill}`}>
+                          {uid === user?.uid ? "나" : "멤버"}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
       </main>
 
       {/* FAB: 새 여행 만들기 / 코드로 참가 */}
