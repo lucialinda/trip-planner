@@ -148,8 +148,96 @@ service cloud.firestore {
       }
 
       match /expenses/{expenseId} {
-        allow read, create, update: if isTripMember(tripId);
-        allow delete: if false;
+        function isExpenseOwner() {
+          return signedIn()
+            && (
+              (
+                'createdByUid' in resource.data
+                && resource.data.createdByUid == request.auth.uid
+              )
+              || resource.data.paidByUid == request.auth.uid
+            );
+        }
+
+        function hasValidExpenseShape() {
+          return request.resource.data.keys().hasOnly([
+              'category',
+              'description',
+              'paidByUid',
+              'paidBy',
+              'localCurrency',
+              'localAmount',
+              'rate',
+              'krwAmount',
+              'confirmedRate',
+              'confirmedKrwAmount',
+              'status',
+              'paidAt',
+              'participants',
+              'createdByUid',
+              'createdBy',
+              'createdAt',
+              'updatedAt'
+            ])
+            && request.resource.data.category in ['food', 'cafe', 'transit', 'lodging', 'activity', 'shopping', 'etc']
+            && request.resource.data.description is string
+            && request.resource.data.paidByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+            && request.resource.data.paidBy is string
+            && request.resource.data.localCurrency is string
+            && request.resource.data.localAmount is number
+            && request.resource.data.localAmount > 0
+            && request.resource.data.rate is number
+            && request.resource.data.rate > 0
+            && request.resource.data.krwAmount is number
+            && request.resource.data.krwAmount > 0
+            && request.resource.data.status in ['tentative', 'confirmed']
+            && request.resource.data.paidAt is timestamp
+            && request.resource.data.participants is map
+            && request.resource.data.participants.keys().size() > 0
+            && request.resource.data.participants.keys().hasOnly(get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids)
+            && request.resource.data.createdByUid is string
+            && request.resource.data.createdByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+            && request.resource.data.createdBy is string
+            && request.resource.data.createdAt is timestamp
+            && request.resource.data.updatedAt is timestamp
+            && (
+              !('confirmedRate' in request.resource.data)
+              || (
+                request.resource.data.confirmedRate is number
+                && request.resource.data.confirmedRate > 0
+              )
+            )
+            && (
+              !('confirmedKrwAmount' in request.resource.data)
+              || (
+                request.resource.data.confirmedKrwAmount is number
+                && request.resource.data.confirmedKrwAmount > 0
+              )
+            );
+        }
+
+        function isOwnExpenseCreate() {
+          return request.resource.data.createdByUid == request.auth.uid;
+        }
+
+        function preservesExpenseAuditFields() {
+          return request.resource.data.createdByUid == resource.data.createdByUid
+            && request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.createdAt == resource.data.createdAt;
+        }
+
+        allow read: if isTripMember(tripId) || isAdmin();
+        allow create: if isAdmin()
+          || (isTripMember(tripId)
+          && hasValidExpenseShape()
+          && isOwnExpenseCreate());
+        allow update: if isAdmin()
+          || (isTripMember(tripId)
+          && isExpenseOwner()
+          && hasValidExpenseShape()
+          && preservesExpenseAuditFields());
+        allow delete: if isAdmin()
+          || (isTripMember(tripId) && isExpenseOwner());
       }
 
       match /threads/{threadId} {

@@ -292,6 +292,8 @@ export function AddExpenseDialog({
         status: "tentative",
         paidAt: Timestamp.fromDate(paidAt),
         participants: finalParticipants,
+        createdByUid: user.uid,
+        createdBy: user.displayName || "익명",
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });

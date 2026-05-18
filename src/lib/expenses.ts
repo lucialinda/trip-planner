@@ -31,6 +31,8 @@ export interface Expense {
   paidAt: Date;
   /** 정산 참여자 uid 맵 (결제자 포함). 비어 있으면 호출 측에서 멤버 전원으로 해석 */
   participants: Record<string, true>;
+  createdByUid?: string;
+  createdBy?: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -122,6 +124,8 @@ export function fromDoc(d: QueryDocumentSnapshot): Expense {
       v.participants && typeof v.participants === "object"
         ? (v.participants as Record<string, true>)
         : {},
+    createdByUid: v.createdByUid as string | undefined,
+    createdBy: v.createdBy as string | undefined,
     createdAt: ts("createdAt") ?? new Date(),
     updatedAt: ts("updatedAt") ?? ts("createdAt") ?? new Date(),
   };
