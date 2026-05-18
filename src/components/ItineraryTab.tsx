@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Linkify from "linkify-react";
-import { Edit2, MapPin, Trash2 } from "lucide-react";
+import { Copy, Edit2, MapPin, Trash2 } from "lucide-react";
 
 interface Place {
   id: string;
@@ -622,6 +622,15 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
     }
   };
 
+  const handleCopyNote = async (note: string) => {
+    try {
+      await navigator.clipboard.writeText(note);
+      toast.success("메모가 복사되었습니다.");
+    } catch {
+      toast.error("메모 복사에 실패했습니다.");
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center py-12">
@@ -751,7 +760,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                       {place.note && (
                         <div className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant">
                           <MemoIcon className="mt-1 h-3 w-3 shrink-0" />
-                          <span className="min-w-0 whitespace-pre-wrap break-words">
+                          <span className="min-w-0 max-w-[16rem] truncate">
                             <Linkify
                               options={{
                                 target: "_blank",
@@ -762,6 +771,18 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                               {place.note}
                             </Linkify>
                           </span>
+                          <button
+                            type="button"
+                            aria-label="메모 복사"
+                            title="메모 복사"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleCopyNote(place.note || "");
+                            }}
+                            className="-mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-slate-100 hover:text-primary"
+                          >
+                            <Copy className="h-3.5 w-3.5" />
+                          </button>
                         </div>
                       )}
                     </div>
