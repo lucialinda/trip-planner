@@ -655,27 +655,38 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
           (new Date(place.date).getTime() - new Date(today).getTime()) /
             (1000 * 60 * 60 * 24)
         );
-        const dayLabel = diffDays === 0 ? "오늘" : `D-${diffDays}`;
+        const dayLabel = diffDays === 0 ? "D-Day" : `D-${diffDays}`;
         const timeLabel = formatPlaceTime(place);
 
         return (
-          <div className="mb-4 rounded-xl bg-primary px-4 py-3 text-white shadow-md shadow-primary/20">
-            <div className="flex items-center gap-3">
-              <span
-                className="material-symbols-outlined shrink-0 text-white/80"
-                style={{ fontVariationSettings: "'FILL' 1" }}
-              >
-                {isToday ? "play_circle" : "event"}
-              </span>
-              <div className="min-w-0 flex-1">
-                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-white/70">
-                  {isToday ? "오늘 다가오는 일정" : "다가오는 일정"}
-                </p>
-                <p className="truncate text-sm font-bold">{place.name}</p>
-                <p className="mt-0.5 text-[11px] text-white/80">
-                  <span className="mr-1.5 font-bold">{dayLabel}</span>
-                  {timeLabel}
-                </p>
+          <div className="mb-5">
+            <div className="mb-2 text-sm font-bold text-on-surface">
+              다가오는 일정
+            </div>
+            <div className="relative overflow-hidden rounded-xl border border-slate-100 bg-white px-4 py-3 shadow-[0_3px_12px_rgba(15,23,42,0.10)]">
+              <div className="absolute inset-y-0 left-0 w-1 bg-sky-400" />
+              <div className="flex items-center gap-3">
+                <div className="w-11 shrink-0 text-center">
+                  <div className="text-[10px] font-extrabold uppercase tracking-wide text-slate-400">
+                    {badgeMonth(place.date)}
+                  </div>
+                  <div className="mt-0.5 text-lg font-extrabold leading-none text-slate-800">
+                    {badgeDay(place.date)}
+                  </div>
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-sm font-bold text-on-surface">
+                    {place.name}
+                  </div>
+                  {timeLabel && (
+                    <div className="mt-0.5 truncate text-xs text-on-surface-variant">
+                      {timeLabel}
+                    </div>
+                  )}
+                </div>
+                <div className="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-bold text-sky-600">
+                  {dayLabel}
+                </div>
               </div>
             </div>
           </div>
