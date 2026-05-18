@@ -1,10 +1,12 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   collection,
+  deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -16,15 +18,18 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { BottomNav } from "@/components/BottomNav";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
+import { SwipeableItem, type SwipeableItemHandle } from "@/components/ui/SwipeableItem";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   CATEGORY_META,
   type Expense,
   type ExpenseCategory,
   effectiveKrw,
   formatKrw,
-  formatPaidAt,
   fromDoc,
 } from "@/lib/expenses";
+import { isAdminUid } from "@/lib/admin";
+import { Edit2, Trash2 } from "lucide-react";
 
 // ---------- 트립 데이터 (settle에서 필요한 최소 필드) ----------
 
@@ -48,6 +53,13 @@ const FILTER_OPTIONS: { key: FilterKey; label: string }[] = [
   { key: "confirmed", label: "정산완료" },
 ];
 
+function formatPaidDate(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  return `${y}.${m}.${d}`;
+}
+
 // ---------- Page ----------
 
 function SettleContent() {
@@ -63,6 +75,9 @@ function SettleContent() {
   const [expensesError, setExpensesError] = useState<FirestoreError | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [memberPhotos, setMemberPhotos] = useState<Record<string, string | null>>({});
+  const swipeRefs = useRef<Map<string, SwipeableItemHandle | null>>(new Map());
 
   // 비로그인 / id 누락 → 홈으로
   useEffect(() => {
@@ -122,6 +137,35 @@ function SettleContent() {
     return () => unsub();
   }, [user, tripId]);
 
+  useEffect(() => {
+    const members = trip?.members ?? {};
+    const uids = Object.keys(members);
+    if (!uids.length) {
+      setMemberPhotos({});
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(
+        uids.map(async (uid) => {
+          try {
+            const snap = await getDoc(doc(db, "userProfiles", uid));
+            const url = snap.exists() ? (snap.data()?.photoURL ?? null) : null;
+            return [uid, url] as const;
+          } catch {
+            return [uid, null] as const;
+          }
+        })
+      );
+      if (!cancelled) setMemberPhotos(Object.fromEntries(entries));
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [trip?.members]);
+
   // 집계
   const memberCount = useMemo(
     () => Object.keys(trip?.members ?? {}).length,
@@ -165,6 +209,33 @@ function SettleContent() {
 
   const isInitialLoading =
     authLoading || tripLoading || (expensesLoading && expenses.length === 0);
+
+  const closeAllSwipes = (exceptId?: string) => {
+    swipeRefs.current.forEach((handle, id) => {
+      if (id !== exceptId) handle?.close();
+    });
+  };
+
+  const canManageExpense = (expense: Expense) => {
+    if (!user) return false;
+    return (
+      isAdminUid(user.uid) ||
+      expense.createdByUid === user.uid ||
+      expense.paidByUid === user.uid
+    );
+  };
+
+  const handleDeleteExpense = async (expense: Expense) => {
+    if (!tripId) return;
+    if (!window.confirm("이 지출을 삭제할까요?")) return;
+    try {
+      await deleteDoc(doc(db, "trips", tripId, "expenses", expense.id));
+      toast.success("지출을 삭제했어요.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`삭제 실패: ${message}`);
+    }
+  };
 
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
@@ -311,9 +382,70 @@ function SettleContent() {
               <FilterEmptyState />
             ) : (
               <div className="space-y-3">
-                {filteredExpenses.map((exp) => (
-                  <ExpenseCard key={exp.id} expense={exp} />
-                ))}
+                {filteredExpenses.map((exp) => {
+                  const canManage = canManageExpense(exp);
+                  const card = (
+                    <ExpenseCard
+                      expense={exp}
+                      members={trip?.members ?? EMPTY_MEMBERS}
+                      memberPhotos={memberPhotos}
+                      canManage={canManage}
+                      onMenuClick={() => {
+                        closeAllSwipes(exp.id);
+                        swipeRefs.current.get(exp.id)?.toggle();
+                      }}
+                    />
+                  );
+
+                  if (!canManage) {
+                    return <div key={exp.id}>{card}</div>;
+                  }
+
+                  return (
+                    <SwipeableItem
+                      key={exp.id}
+                      actionWidth={120}
+                      ref={(handle) => {
+                        if (handle) {
+                          swipeRefs.current.set(exp.id, handle);
+                        } else {
+                          swipeRefs.current.delete(exp.id);
+                        }
+                      }}
+                      onOpenChange={(open) => {
+                        if (open) closeAllSwipes(exp.id);
+                      }}
+                      actions={
+                        <div className="flex h-full w-full items-center justify-center gap-1.5 pl-2 pr-1">
+                          <button
+                            type="button"
+                            aria-label="수정"
+                            onClick={() => {
+                              swipeRefs.current.get(exp.id)?.close();
+                              setEditingExpense(exp);
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-slate-700 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="삭제"
+                            onClick={() => {
+                              swipeRefs.current.get(exp.id)?.close();
+                              handleDeleteExpense(exp);
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-slate-700 shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-rose-500/40 hover:text-white active:scale-95"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      }
+                    >
+                      {card}
+                    </SwipeableItem>
+                  );
+                })}
               </div>
             )}
           </>
@@ -353,6 +485,18 @@ function SettleContent() {
         />
       )}
 
+      {trip && tripId && editingExpense && (
+        <AddExpenseDialog
+          open={!!editingExpense}
+          onOpenChange={(open) => {
+            if (!open) setEditingExpense(null);
+          }}
+          tripId={tripId}
+          members={trip.members ?? EMPTY_MEMBERS}
+          editingExpense={editingExpense}
+        />
+      )}
+
       <BottomNav />
     </div>
   );
@@ -360,10 +504,30 @@ function SettleContent() {
 
 // ---------- 하위 프레젠테이션 컴포넌트 ----------
 
-function ExpenseCard({ expense }: { expense: Expense }) {
+function ExpenseCard({
+  expense,
+  members,
+  memberPhotos,
+  canManage = false,
+  onMenuClick,
+}: {
+  expense: Expense;
+  members: Record<string, string>;
+  memberPhotos: Record<string, string | null>;
+  canManage?: boolean;
+  onMenuClick?: () => void;
+}) {
   const meta = CATEGORY_META[expense.category];
   const isConfirmed = expense.status === "confirmed";
   const krw = effectiveKrw(expense);
+  const participantEntries = (
+    Object.keys(expense.participants ?? {}).length > 0
+      ? Object.keys(expense.participants ?? {}).map((uid) => [uid, members[uid] ?? ""] as const)
+      : Object.entries(members)
+  ).filter(([, name]) => !!name);
+  const visibleParticipants = participantEntries.slice(0, 4);
+  const hiddenParticipantCount = Math.max(0, participantEntries.length - visibleParticipants.length);
+
   return (
     <div
       role="button"
@@ -382,8 +546,40 @@ function ExpenseCard({ expense }: { expense: Expense }) {
           {expense.description || meta.label}
         </h4>
         <p className="text-on-surface-variant text-xs mt-0.5">
-          {formatPaidAt(expense.paidAt)}
+          {expense.paidBy ? `${expense.paidBy} 결제 · ` : ""}
+          {formatPaidDate(expense.paidAt)}
         </p>
+        {participantEntries.length > 0 && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="flex -space-x-1.5">
+              {visibleParticipants.map(([uid, name], idx) => {
+                const photo = memberPhotos[uid];
+                const fallbackBg =
+                  idx === 0
+                    ? "bg-primary/20 text-primary"
+                    : idx === 1
+                    ? "bg-tertiary/20 text-tertiary"
+                    : "bg-slate-200 text-slate-600";
+                return (
+                  <Avatar key={uid} size="sm" className="h-6 w-6 border-2 border-white">
+                    {photo ? <AvatarImage src={photo} className="object-cover" /> : null}
+                    <AvatarFallback className={`text-[10px] font-medium ${fallbackBg}`}>
+                      {String(name).charAt(0)}
+                    </AvatarFallback>
+                  </Avatar>
+                );
+              })}
+              {hiddenParticipantCount > 0 && (
+                <div className="flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-slate-200 text-[10px] font-medium text-slate-600">
+                  +{hiddenParticipantCount}
+                </div>
+              )}
+            </div>
+            <span className="text-[11px] text-on-surface-variant">
+              {participantEntries.length}명 정산
+            </span>
+          </div>
+        )}
       </div>
       <div className="text-right shrink-0">
         <p className="text-on-surface font-bold">{formatKrw(krw)}</p>
@@ -395,6 +591,21 @@ function ExpenseCard({ expense }: { expense: Expense }) {
           {isConfirmed ? "정산 완료" : "정산 예정"}
         </p>
       </div>
+      {canManage && (
+        <button
+          type="button"
+          aria-label="수정/삭제 메뉴"
+          onClick={(e) => {
+            e.stopPropagation();
+            onMenuClick?.();
+          }}
+          className="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary transition-colors rounded-full"
+        >
+          <span className="material-symbols-outlined text-[20px]">
+            more_vert
+          </span>
+        </button>
+      )}
     </div>
   );
 }

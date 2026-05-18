@@ -195,9 +195,17 @@ service cloud.firestore {
             && request.resource.data.participants is map
             && request.resource.data.participants.keys().size() > 0
             && request.resource.data.participants.keys().hasOnly(get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids)
-            && request.resource.data.createdByUid is string
-            && request.resource.data.createdByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
-            && request.resource.data.createdBy is string
+            && (
+              !('createdByUid' in request.resource.data)
+              || (
+                request.resource.data.createdByUid is string
+                && request.resource.data.createdByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+              )
+            )
+            && (
+              !('createdBy' in request.resource.data)
+              || request.resource.data.createdBy is string
+            )
             && request.resource.data.createdAt is timestamp
             && request.resource.data.updatedAt is timestamp
             && (
@@ -221,8 +229,8 @@ service cloud.firestore {
         }
 
         function preservesExpenseAuditFields() {
-          return request.resource.data.createdByUid == resource.data.createdByUid
-            && request.resource.data.createdBy == resource.data.createdBy
+          return (!('createdByUid' in resource.data) || request.resource.data.createdByUid == resource.data.createdByUid)
+            && (!('createdBy' in resource.data) || request.resource.data.createdBy == resource.data.createdBy)
             && request.resource.data.createdAt == resource.data.createdAt;
         }
 

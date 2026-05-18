@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { addDoc, collection, serverTimestamp, Timestamp } from "firebase/firestore";
+import { addDoc, collection, doc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
 import { toast } from "sonner";
 
 import { db } from "@/lib/firebase";
@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
   CATEGORY_META,
+  type Expense,
   type ExpenseCategory,
 } from "@/lib/expenses";
 import {
@@ -50,6 +51,8 @@ export interface AddExpenseDialogProps {
   tripId: string;
   /** trip.members ({ uid: displayName }) */
   members: Record<string, string>;
+  /** 기존 지출을 넣으면 수정 모드로 동작 */
+  editingExpense?: Expense | null;
   /** Phase 4 settings 도입 전이라 기본은 전체 카테고리. */
   enabledCategories?: ExpenseCategory[];
   /** Phase 4 settings 도입 전이라 기본은 KRW + JPY. */
@@ -83,6 +86,7 @@ export function AddExpenseDialog({
   onOpenChange,
   tripId,
   members,
+  editingExpense = null,
   enabledCategories = ALL_CATEGORIES,
   enabledCurrencies = ["KRW", "JPY"],
   defaultCurrency,
@@ -109,11 +113,30 @@ export function AddExpenseDialog({
   const [paidAtLocal, setPaidAtLocal] = useState<string>("");
   const [participants, setParticipants] = useState<Record<string, true>>({});
   const [saving, setSaving] = useState(false);
+  const isEditMode = !!editingExpense;
 
   // ---------- 다이얼로그 열릴 때 초기화 ----------
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect */
     if (!open) return;
+
+    if (editingExpense) {
+      setCategory(editingExpense.category);
+      setDescription(editingExpense.description);
+      setLocalCurrency(editingExpense.localCurrency);
+      setLocalAmount(String(editingExpense.localAmount));
+      setKrwAmount(String(editingExpense.krwAmount));
+      setKrwManuallyEdited(false);
+      setRate(editingExpense.rate ?? null);
+      setRateLoading(false);
+      setRateError(false);
+      setPaidByUid(editingExpense.paidByUid);
+      setPaidAtLocal(toDatetimeLocalValue(editingExpense.paidAt));
+      setParticipants(editingExpense.participants ?? {});
+      setSaving(false);
+      return;
+    }
+
     const me = user?.uid ?? memberUids[0] ?? "";
     setCategory(null);
     setDescription("");
@@ -132,7 +155,7 @@ export function AddExpenseDialog({
     setParticipants(init);
     setSaving(false);
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, user, memberUids, initialCurrency]);
+  }, [open, editingExpense, user, memberUids, initialCurrency]);
 
   // ---------- 환율 fetch (debounce) — KRW는 핸들러에서 직접 동기화하므로 비-KRW만 ----------
   useEffect(() => {
@@ -197,9 +220,21 @@ export function AddExpenseDialog({
   };
 
   const handlePaidByChange = (uid: string) => {
+    const previousPaidByUid = paidByUid;
     setPaidByUid(uid);
-    // 새 결제자 자동 체크
-    setParticipants((prev) => ({ ...prev, [uid]: true }));
+    setParticipants((prev) => {
+      const selectedUids = Object.keys(prev);
+      const wasOnlyPreviousPayer =
+        previousPaidByUid &&
+        selectedUids.length === 1 &&
+        selectedUids[0] === previousPaidByUid;
+
+      if (wasOnlyPreviousPayer) {
+        return { [uid]: true };
+      }
+
+      return { ...prev, [uid]: true };
+    });
   };
 
   const toggleParticipant = (uid: string) => {
@@ -280,7 +315,7 @@ export function AddExpenseDialog({
 
     setSaving(true);
     try {
-      await addDoc(collection(db, "trips", tripId, "expenses"), {
+      const payload = {
         category,
         description: desc,
         paidByUid,
@@ -292,15 +327,24 @@ export function AddExpenseDialog({
         status: "tentative",
         paidAt: Timestamp.fromDate(paidAt),
         participants: finalParticipants,
-        createdByUid: user.uid,
-        createdBy: user.displayName || "익명",
-        createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
-      toast.success("지출을 추가했어요.");
+      };
+
+      if (isEditMode && editingExpense) {
+        await updateDoc(doc(db, "trips", tripId, "expenses", editingExpense.id), payload);
+        toast.success("지출을 수정했어요.");
+      } else {
+        await addDoc(collection(db, "trips", tripId, "expenses"), {
+          ...payload,
+          createdByUid: user.uid,
+          createdBy: user.displayName || "익명",
+          createdAt: serverTimestamp(),
+        });
+        toast.success("지출을 추가했어요.");
+      }
       onOpenChange(false);
     } catch (e) {
-      console.error("[AddExpenseDialog] addDoc failed", e);
+      console.error("[AddExpenseDialog] save failed", e);
       toast.error("저장에 실패했어요. 다시 시도해주세요.");
     } finally {
       setSaving(false);
@@ -321,7 +365,7 @@ export function AddExpenseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md sm:max-w-md max-h-[90vh] overflow-y-auto rounded-xl">
         <DialogHeader>
-          <DialogTitle>지출 추가</DialogTitle>
+          <DialogTitle>{isEditMode ? "지출 수정" : "지출 추가"}</DialogTitle>
           <DialogDescription>
             결제한 항목을 기록하면 자동으로 1/n 정산이 계산돼요.
           </DialogDescription>
@@ -586,7 +630,7 @@ export function AddExpenseDialog({
             disabled={saving}
           >
             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            저장
+            {isEditMode ? "수정 완료" : "저장"}
           </Button>
         </div>
       </DialogContent>
