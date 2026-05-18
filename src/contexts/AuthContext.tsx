@@ -22,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
       setUser(currentUser);
+      setLoading(false);
       if (currentUser) {
         // Upsert user profile
         try {
@@ -33,7 +34,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           console.error("Failed to update user profile:", error);
         }
       }
-      setLoading(false);
     });
 
     return () => unsubscribe();

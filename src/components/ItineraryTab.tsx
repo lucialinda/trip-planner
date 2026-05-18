@@ -51,6 +51,7 @@ interface ItineraryTabProps {
     name?: string;
     startDate?: string;
     endDate?: string;
+    memberUids?: string[];
     [key: string]: unknown;
   };
 }
@@ -105,6 +106,7 @@ function placeEndTime(place: Place) {
 function formatPlaceTime(place: Place) {
   const startTime = placeStartTime(place);
   const endTime = placeEndTime(place);
+  if (startTime && endTime && startTime === endTime) return `출발 ${startTime}`;
   if (startTime && endTime) return `${startTime} ~ ${endTime}`;
   if (startTime) return startTime;
   if (endTime) return `종료 ${endTime}`;
@@ -482,6 +484,24 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
       ? today
       : null
     : null;
+  const canManagePlaces = !!user && (trip.memberUids || []).includes(user.uid);
+
+  const nextPlace = useMemo(() => {
+    const nowTime = new Date().toTimeString().slice(0, 5);
+    const todayUpcoming = (placesByDate[today] || []).find((place) => {
+      const startTime = placeStartTime(place);
+      return !startTime || startTime > nowTime;
+    });
+    if (todayUpcoming) return { place: todayUpcoming, isToday: true };
+
+    const futureDate = Object.keys(placesByDate)
+      .filter((date) => date > today)
+      .sort()
+      .find((date) => (placesByDate[date] || []).length > 0);
+
+    if (!futureDate) return null;
+    return { place: placesByDate[futureDate][0], isToday: false };
+  }, [placesByDate, today]);
 
   const closeAllSwipes = (exceptId?: string) => {
     swipeRefs.current.forEach((handle, id) => {
@@ -620,6 +640,39 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
 
   return (
     <div className="pb-32 relative">
+      {nextPlace && (() => {
+        const { place, isToday } = nextPlace;
+        const diffDays = Math.round(
+          (new Date(place.date).getTime() - new Date(today).getTime()) /
+            (1000 * 60 * 60 * 24)
+        );
+        const dayLabel = diffDays === 0 ? "오늘" : `D-${diffDays}`;
+        const timeLabel = formatPlaceTime(place);
+
+        return (
+          <div className="mb-4 rounded-xl bg-primary px-4 py-3 text-white shadow-md shadow-primary/20">
+            <div className="flex items-center gap-3">
+              <span
+                className="material-symbols-outlined shrink-0 text-white/80"
+                style={{ fontVariationSettings: "'FILL' 1" }}
+              >
+                {isToday ? "play_circle" : "event"}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="mb-0.5 text-[10px] font-bold uppercase tracking-wide text-white/70">
+                  {isToday ? "오늘 다가오는 일정" : "다가오는 일정"}
+                </p>
+                <p className="truncate text-sm font-bold">{place.name}</p>
+                <p className="mt-0.5 text-[11px] text-white/80">
+                  <span className="mr-1.5 font-bold">{dayLabel}</span>
+                  {timeLabel}
+                </p>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Day 섹션들 */}
       {dates.map((date, index) => {
         const dayPlaces = placesByDate[date] || [];
@@ -643,7 +696,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
 
             <div className="space-y-2">
               {dayPlaces.map((place, pIdx) => {
-                const canManage = place.addedByUid === user?.uid;
+                const canManage = canManagePlaces;
                 const highlight = isToday && pIdx === 0;
                 const timeLabel = formatPlaceTime(place);
                 const placeLink = parsePlaceLink(place.placeUrl || "");
@@ -713,7 +766,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                       )}
                     </div>
 
-                    {/* more_vert (관리자만) */}
+                    {/* more_vert (여행 멤버만) */}
                     {canManage && (
                       <button
                         type="button"

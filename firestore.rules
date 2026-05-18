@@ -23,11 +23,6 @@ service cloud.firestore {
         && request.auth.uid in getAfter(/databases/$(database)/documents/trips/$(tripId)).data.memberUids;
     }
 
-    function isPlaceAuthor() {
-      return signedIn()
-        && resource.data.addedByUid == request.auth.uid;
-    }
-
     function isOwnPlaceCreate() {
       return signedIn()
         && request.resource.data.addedByUid == request.auth.uid;
@@ -137,13 +132,14 @@ service cloud.firestore {
         allow update: if isTripMember(tripId)
           && (
             (
-              isPlaceAuthor()
-              && request.resource.data.addedByUid == resource.data.addedByUid
+              request.resource.data.addedByUid == resource.data.addedByUid
+              && request.resource.data.addedBy == resource.data.addedBy
+              && request.resource.data.createdAt == resource.data.createdAt
               && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'time', 'startTime', 'endTime', 'placeUrl', 'note'])
             )
             || isOwnPlaceVote()
           );
-        allow delete: if isTripMember(tripId) && isPlaceAuthor();
+        allow delete: if isTripMember(tripId);
       }
 
       match /votes/{voteId} {
