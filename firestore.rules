@@ -49,10 +49,29 @@ service cloud.firestore {
     }
 
     match /userProfiles/{uid} {
+      function hasValidUserProfileShape() {
+        return request.resource.data.keys().hasOnly([
+            'name',
+            'photoURL',
+            'settlementAccountBank',
+            'settlementAccountNumber',
+            'settlementAccountHolder',
+            'settlementDefaultCurrency',
+            'settlementDefaultRate'
+          ])
+          && (!('name' in request.resource.data) || request.resource.data.name is string)
+          && (!('photoURL' in request.resource.data) || request.resource.data.photoURL is string || request.resource.data.photoURL == null)
+          && (!('settlementAccountBank' in request.resource.data) || request.resource.data.settlementAccountBank is string)
+          && (!('settlementAccountNumber' in request.resource.data) || request.resource.data.settlementAccountNumber is string)
+          && (!('settlementAccountHolder' in request.resource.data) || request.resource.data.settlementAccountHolder is string)
+          && (!('settlementDefaultCurrency' in request.resource.data) || request.resource.data.settlementDefaultCurrency is string)
+          && (!('settlementDefaultRate' in request.resource.data) || request.resource.data.settlementDefaultRate is string);
+      }
+
       allow read: if signedIn();
       allow create, update: if signedIn()
         && request.auth.uid == uid
-        && request.resource.data.keys().hasOnly(['name', 'photoURL']);
+        && hasValidUserProfileShape();
       allow delete: if false;
     }
 

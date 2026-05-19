@@ -8,6 +8,7 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  setDoc,
   orderBy,
   query,
   type FirestoreError,
@@ -20,6 +21,9 @@ import { BottomNav } from "@/components/BottomNav";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
 import { SwipeableItem, type SwipeableItemHandle } from "@/components/ui/SwipeableItem";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import {
   CATEGORY_META,
   type Expense,
@@ -27,9 +31,10 @@ import {
   effectiveKrw,
   formatKrw,
   fromDoc,
+  getParticipantUids,
 } from "@/lib/expenses";
 import { isAdminUid } from "@/lib/admin";
-import { Edit2, Trash2 } from "lucide-react";
+import { Check, Circle, CircleCheck, Edit2, Send, Trash2 } from "lucide-react";
 
 // ---------- 트립 데이터 (settle에서 필요한 최소 필드) ----------
 
@@ -40,9 +45,38 @@ interface TripData {
   memberUids?: string[];
 }
 
+interface SettlementSettings {
+  settlementAccountBank: string;
+  settlementAccountNumber: string;
+  settlementAccountHolder: string;
+  settlementDefaultCurrency: string;
+  settlementDefaultRate: string;
+}
+
+interface SettlementTransfer {
+  fromName: string;
+  toName: string;
+  amount: number;
+}
+
+interface SettlementPreview {
+  title: string;
+  text: string;
+  total: number;
+  transfers: SettlementTransfer[];
+  details: string[];
+}
+
 // ---------- 상수 ----------
 
 const EMPTY_MEMBERS: Record<string, string> = {};
+const DEFAULT_SETTLEMENT_SETTINGS: SettlementSettings = {
+  settlementAccountBank: "",
+  settlementAccountNumber: "",
+  settlementAccountHolder: "",
+  settlementDefaultCurrency: "USD",
+  settlementDefaultRate: "1",
+};
 
 // ---------- 필터 ----------
 
@@ -60,6 +94,113 @@ function formatPaidDate(date: Date): string {
   return `${y}.${m}.${d}`;
 }
 
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
+}
+
+function normalizeSettlementSettings(data: Record<string, unknown> | undefined): SettlementSettings {
+  return {
+    settlementAccountBank:
+      typeof data?.settlementAccountBank === "string" ? data.settlementAccountBank : "",
+    settlementAccountNumber:
+      typeof data?.settlementAccountNumber === "string" ? data.settlementAccountNumber : "",
+    settlementAccountHolder:
+      typeof data?.settlementAccountHolder === "string" ? data.settlementAccountHolder : "",
+    settlementDefaultCurrency:
+      typeof data?.settlementDefaultCurrency === "string" && data.settlementDefaultCurrency
+        ? data.settlementDefaultCurrency
+        : DEFAULT_SETTLEMENT_SETTINGS.settlementDefaultCurrency,
+    settlementDefaultRate:
+      typeof data?.settlementDefaultRate === "string" && data.settlementDefaultRate
+        ? data.settlementDefaultRate
+        : DEFAULT_SETTLEMENT_SETTINGS.settlementDefaultRate,
+  };
+}
+
+function getSettlementAccountLine(settings: SettlementSettings) {
+  const bank = settings.settlementAccountBank.trim();
+  const number = settings.settlementAccountNumber.trim();
+  const holder = settings.settlementAccountHolder.trim();
+  if (!bank && !number && !holder) return "송금 계좌: 정산 설정에서 계좌를 입력해 주세요.";
+  return `송금 계좌: ${[bank, number, holder].filter(Boolean).join(" ")}`;
+}
+
+function buildSettlementPreview({
+  tripName,
+  members,
+  expenses,
+  settings,
+  pageUrl,
+}: {
+  tripName: string;
+  members: Record<string, string>;
+  expenses: Expense[];
+  settings: SettlementSettings;
+  pageUrl: string;
+}): SettlementPreview {
+  const memberUids = Object.keys(members);
+  const total = expenses.reduce((sum, expense) => sum + effectiveKrw(expense), 0);
+  const transferMap = new Map<string, { fromName: string; toName: string; amount: number }>();
+
+  for (const expense of expenses) {
+    const participantUids = getParticipantUids(expense, memberUids);
+    if (participantUids.length === 0) continue;
+    const share = Math.round(effectiveKrw(expense) / participantUids.length);
+    for (const uid of participantUids) {
+      if (uid === expense.paidByUid) continue;
+      const key = `${uid}->${expense.paidByUid}`;
+      const prev = transferMap.get(key);
+      transferMap.set(key, {
+        fromName: members[uid] ?? "이름 없음",
+        toName: members[expense.paidByUid] ?? expense.paidBy ?? "결제자",
+        amount: (prev?.amount ?? 0) + share,
+      });
+    }
+  }
+
+  const transfers = Array.from(transferMap.values()).filter((item) => item.amount > 0);
+  const details = expenses.map(
+    (expense) =>
+      `${expense.description || CATEGORY_META[expense.category].label}: ${formatKrw(effectiveKrw(expense))} (${expense.paidBy} 결제)`
+  );
+  const transferLines = transfers.map(
+    (transfer) => `- ${transfer.fromName} -> ${transfer.toName}: ${formatKrw(transfer.amount)}`
+  );
+  const currencyLine = `기본 통화/환율: ${settings.settlementDefaultCurrency || "USD"} / ${settings.settlementDefaultRate || "1"}`;
+  const title = `${tripName} 정산 요청`;
+  const text = [
+    `[${title}]`,
+    `선택한 미정산 내역 ${expenses.length}건`,
+    `총 지출 금액: ${formatKrw(total)}`,
+    currencyLine,
+    getSettlementAccountLine(settings),
+    "",
+    "보낼 금액",
+    transferLines.join("\n") || "- 정산 대상 없음",
+    "",
+    "선택 내역",
+    details.map((line) => `- ${line}`).join("\n"),
+    pageUrl ? `\n정산 페이지: ${pageUrl}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { title, text, total, transfers, details };
+}
+
 // ---------- Page ----------
 
 function SettleContent() {
@@ -75,7 +216,17 @@ function SettleContent() {
   const [expensesError, setExpensesError] = useState<FirestoreError | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [addOpen, setAddOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [settlementSettings, setSettlementSettings] = useState<SettlementSettings>(DEFAULT_SETTLEMENT_SETTINGS);
+  const [settingsDraft, setSettingsDraft] = useState<SettlementSettings>(DEFAULT_SETTLEMENT_SETTINGS);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settlementPreview, setSettlementPreview] = useState<SettlementPreview | null>(null);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedExpenseIds, setSelectedExpenseIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const [memberPhotos, setMemberPhotos] = useState<Record<string, string | null>>({});
   const swipeRefs = useRef<Map<string, SwipeableItemHandle | null>>(new Map());
 
@@ -166,6 +317,32 @@ function SettleContent() {
     };
   }, [trip?.members]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const snap = await getDoc(doc(db, "userProfiles", user.uid));
+        const settings = normalizeSettlementSettings(
+          snap.exists() ? (snap.data() as Record<string, unknown>) : undefined
+        );
+        if (!cancelled) {
+          setSettlementSettings(settings);
+          setSettingsDraft(settings);
+        }
+      } catch {
+        if (!cancelled) {
+          setSettlementSettings(DEFAULT_SETTLEMENT_SETTINGS);
+          setSettingsDraft(DEFAULT_SETTLEMENT_SETTINGS);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
+
   // 집계
   const memberCount = useMemo(
     () => Object.keys(trip?.members ?? {}).length,
@@ -207,12 +384,39 @@ function SettleContent() {
     [expenses, filter]
   );
 
+  const selectedExpenses = useMemo(
+    () => expenses.filter((expense) => selectedExpenseIds.has(expense.id)),
+    [expenses, selectedExpenseIds]
+  );
+
+  const enabledExpenseCurrencies = useMemo(
+    () => Array.from(new Set(["KRW", settlementSettings.settlementDefaultCurrency, "JPY"])),
+    [settlementSettings.settlementDefaultCurrency]
+  );
+
   const isInitialLoading =
     authLoading || tripLoading || (expensesLoading && expenses.length === 0);
 
   const closeAllSwipes = (exceptId?: string) => {
     swipeRefs.current.forEach((handle, id) => {
       if (id !== exceptId) handle?.close();
+    });
+  };
+
+  const exitSelectionMode = () => {
+    setSelectionMode(false);
+    setSelectedExpenseIds(new Set());
+  };
+
+  const toggleExpenseSelection = (expenseId: string) => {
+    setSelectedExpenseIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(expenseId)) {
+        next.delete(expenseId);
+      } else {
+        next.add(expenseId);
+      }
+      return next;
     });
   };
 
@@ -223,6 +427,41 @@ function SettleContent() {
       expense.createdByUid === user.uid ||
       expense.paidByUid === user.uid
     );
+  };
+
+  const openSettlementSettings = () => {
+    setSettingsDraft(settlementSettings);
+    setSettingsOpen(true);
+  };
+
+  const handleSaveSettlementSettings = async () => {
+    if (!user) return;
+    const draft: SettlementSettings = {
+      settlementAccountBank: settingsDraft.settlementAccountBank.trim(),
+      settlementAccountNumber: settingsDraft.settlementAccountNumber.trim(),
+      settlementAccountHolder: settingsDraft.settlementAccountHolder.trim(),
+      settlementDefaultCurrency: settingsDraft.settlementDefaultCurrency.trim().toUpperCase() || "USD",
+      settlementDefaultRate: settingsDraft.settlementDefaultRate.trim() || "1",
+    };
+    const rate = Number(draft.settlementDefaultRate);
+    if (!Number.isFinite(rate) || rate <= 0) {
+      toast.error("환율은 0보다 큰 숫자로 입력해 주세요.");
+      return;
+    }
+
+    setSettingsSaving(true);
+    try {
+      await setDoc(doc(db, "userProfiles", user.uid), draft, { merge: true });
+      setSettlementSettings(draft);
+      setSettingsDraft(draft);
+      setSettingsOpen(false);
+      toast.success("정산 설정을 저장했어요.");
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`정산 설정 저장 실패: ${message}`);
+    } finally {
+      setSettingsSaving(false);
+    }
   };
 
   const handleDeleteExpense = async (expense: Expense) => {
@@ -237,6 +476,62 @@ function SettleContent() {
     }
   };
 
+  const handleShareSettlementRequest = async () => {
+    if (selectedExpenses.length === 0) {
+      toast.error("정산 요청할 내역을 선택해 주세요.");
+      return;
+    }
+
+    const preview = buildSettlementPreview({
+      tripName: trip?.name ?? "여행",
+      members: trip?.members ?? EMPTY_MEMBERS,
+      expenses: selectedExpenses,
+      settings: settlementSettings,
+      pageUrl: typeof window !== "undefined" ? window.location.href : "",
+    });
+    setSettlementPreview(preview);
+    setPreviewOpen(true);
+  };
+
+  const handleConfirmShareSettlementRequest = async () => {
+    if (!settlementPreview) return;
+    const { title, text } = settlementPreview;
+
+    try {
+      if (
+        navigator.share &&
+        (!navigator.canShare ||
+          navigator.canShare({
+            title,
+            text,
+          }))
+      ) {
+        await navigator.share({ title, text });
+        setPreviewOpen(false);
+        setSettlementPreview(null);
+        exitSelectionMode();
+        return;
+      }
+
+      await copyTextToClipboard(text);
+      toast.success("정산 요청 메시지를 복사했어요.");
+      setPreviewOpen(false);
+      setSettlementPreview(null);
+      exitSelectionMode();
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      try {
+        await copyTextToClipboard(text);
+        toast.success("공유창을 열지 못해서 정산 요청 메시지를 복사했어요.");
+        setPreviewOpen(false);
+        setSettlementPreview(null);
+        exitSelectionMode();
+      } catch (copyError: unknown) {
+        const message = copyError instanceof Error ? copyError.message : String(copyError);
+        toast.error(`정산 요청 실패: ${message}`);
+      }
+    }
+  };
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
@@ -261,8 +556,7 @@ function SettleContent() {
         <button
           type="button"
           aria-label="설정"
-          // Phase 4에서 설정 다이얼로그 연결 (현재 noop)
-          onClick={() => {}}
+          onClick={openSettlementSettings}
           className="p-2 -mr-2 text-primary hover:bg-primary/10 active:scale-95 transition-all rounded-full"
         >
           <span className="material-symbols-outlined">more_vert</span>
@@ -354,25 +648,66 @@ function SettleContent() {
             </div>
 
             {/* 필터 칩 (모두보기 / 미정산 / 정산완료) */}
-            <div className="flex gap-2">
-              {FILTER_OPTIONS.map((opt) => {
-                const active = filter === opt.key;
-                return (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setFilter(opt.key)}
-                    aria-pressed={active}
-                    className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                      active
-                        ? "bg-primary text-white border border-primary"
-                        : "bg-white/60 border border-outline-variant text-on-surface-variant hover:border-primary/40"
-                    }`}
-                  >
-                    {opt.label}
-                  </button>
-                );
-              })}
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex min-w-0 flex-wrap gap-2">
+                {FILTER_OPTIONS.map((opt) => {
+                  const active = filter === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => {
+                        setFilter(opt.key);
+                        if (opt.key !== "tentative") exitSelectionMode();
+                      }}
+                      aria-pressed={active}
+                      className={`px-3.5 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                        active
+                          ? "bg-primary text-white border border-primary"
+                          : "bg-white/60 border border-outline-variant text-on-surface-variant hover:border-primary/40"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {filter === "tentative" && filteredExpenses.length > 0 && (
+                <div className="flex shrink-0 items-center gap-1.5">
+                  {selectionMode ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={exitSelectionMode}
+                        className="px-3 py-1.5 rounded-full border border-outline-variant bg-white/60 text-xs font-semibold text-on-surface-variant"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleShareSettlementRequest}
+                        disabled={selectedExpenseIds.size === 0}
+                        className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-primary/20 disabled:cursor-not-allowed disabled:bg-primary/35"
+                      >
+                        <Check className="h-3.5 w-3.5" />
+                        정산요청
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        closeAllSwipes();
+                        setSelectionMode(true);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-full border border-primary/30 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary"
+                    >
+                      <CircleCheck className="h-3.5 w-3.5" />
+                      선택
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* 리스트 */}
@@ -390,6 +725,9 @@ function SettleContent() {
                       members={trip?.members ?? EMPTY_MEMBERS}
                       memberPhotos={memberPhotos}
                       canManage={canManage}
+                      selectionMode={selectionMode}
+                      selected={selectedExpenseIds.has(exp.id)}
+                      onSelectToggle={() => toggleExpenseSelection(exp.id)}
                       onMenuClick={() => {
                         closeAllSwipes(exp.id);
                         swipeRefs.current.get(exp.id)?.toggle();
@@ -397,7 +735,7 @@ function SettleContent() {
                     />
                   );
 
-                  if (!canManage) {
+                  if (!canManage || selectionMode) {
                     return <div key={exp.id}>{card}</div>;
                   }
 
@@ -482,6 +820,8 @@ function SettleContent() {
           onOpenChange={setAddOpen}
           tripId={tripId}
           members={trip.members ?? EMPTY_MEMBERS}
+          enabledCurrencies={enabledExpenseCurrencies}
+          defaultCurrency={settlementSettings.settlementDefaultCurrency}
         />
       )}
 
@@ -497,6 +837,22 @@ function SettleContent() {
         />
       )}
 
+      <SettlementSettingsDialog
+        open={settingsOpen}
+        settings={settingsDraft}
+        saving={settingsSaving}
+        onOpenChange={setSettingsOpen}
+        onChange={setSettingsDraft}
+        onSave={handleSaveSettlementSettings}
+      />
+
+      <SettlementPreviewDialog
+        open={previewOpen}
+        preview={settlementPreview}
+        onOpenChange={setPreviewOpen}
+        onConfirm={handleConfirmShareSettlementRequest}
+      />
+
       <BottomNav />
     </div>
   );
@@ -504,17 +860,181 @@ function SettleContent() {
 
 // ---------- 하위 프레젠테이션 컴포넌트 ----------
 
+function SettlementSettingsDialog({
+  open,
+  settings,
+  saving,
+  onOpenChange,
+  onChange,
+  onSave,
+}: {
+  open: boolean;
+  settings: SettlementSettings;
+  saving: boolean;
+  onOpenChange: (open: boolean) => void;
+  onChange: (settings: SettlementSettings) => void;
+  onSave: () => void;
+}) {
+  const update = (key: keyof SettlementSettings, value: string) => {
+    onChange({ ...settings, [key]: value });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm rounded-xl">
+        <DialogHeader>
+          <DialogTitle>정산 설정</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <label className="text-sm font-semibold text-on-surface">내 정산 계좌</label>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                value={settings.settlementAccountBank}
+                onChange={(e) => update("settlementAccountBank", e.target.value)}
+                placeholder="은행"
+              />
+              <Input
+                value={settings.settlementAccountHolder}
+                onChange={(e) => update("settlementAccountHolder", e.target.value)}
+                placeholder="예금주"
+              />
+            </div>
+            <Input
+              value={settings.settlementAccountNumber}
+              onChange={(e) => update("settlementAccountNumber", e.target.value)}
+              placeholder="계좌번호"
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-on-surface">결제 통화</label>
+              <select
+                value={settings.settlementDefaultCurrency}
+                onChange={(e) => update("settlementDefaultCurrency", e.target.value)}
+                className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+              >
+                <option value="USD">USD</option>
+                <option value="JPY">JPY</option>
+                <option value="EUR">EUR</option>
+                <option value="KRW">KRW</option>
+                <option value="TWD">TWD</option>
+                <option value="THB">THB</option>
+                <option value="VND">VND</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-semibold text-on-surface">기본 환율</label>
+              <Input
+                inputMode="decimal"
+                value={settings.settlementDefaultRate}
+                onChange={(e) => update("settlementDefaultRate", e.target.value)}
+                placeholder="1"
+              />
+            </div>
+          </div>
+
+          <div className="flex gap-2 pt-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={() => onOpenChange(false)}
+              disabled={saving}
+            >
+              취소
+            </Button>
+            <Button type="button" className="flex-1" onClick={onSave} disabled={saving}>
+              저장
+            </Button>
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettlementPreviewDialog({
+  open,
+  preview,
+  onOpenChange,
+  onConfirm,
+}: {
+  open: boolean;
+  preview: SettlementPreview | null;
+  onOpenChange: (open: boolean) => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm rounded-xl">
+        <DialogHeader>
+          <DialogTitle>정산 요청 미리보기</DialogTitle>
+        </DialogHeader>
+        {preview && (
+          <div className="space-y-4 py-2">
+            <div className="rounded-lg border border-primary/15 bg-primary/5 p-3">
+              <p className="text-xs text-on-surface-variant">총 요청 내역</p>
+              <p className="mt-1 text-xl font-bold text-primary">{formatKrw(preview.total)}</p>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-on-surface">보낼 금액</p>
+              <div className="space-y-1.5">
+                {preview.transfers.length > 0 ? (
+                  preview.transfers.map((transfer, idx) => (
+                    <div key={`${transfer.fromName}-${transfer.toName}-${idx}`} className="flex items-center justify-between rounded-lg bg-white/60 px-3 py-2 text-sm">
+                      <span className="text-on-surface">{transfer.fromName} &rarr; {transfer.toName}</span>
+                      <span className="font-bold text-on-surface">{formatKrw(transfer.amount)}</span>
+                    </div>
+                  ))
+                ) : (
+                  <p className="rounded-lg bg-white/60 px-3 py-2 text-sm text-on-surface-variant">정산 대상이 없어요.</p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-on-surface">공유 메시지</p>
+              <pre className="max-h-56 overflow-auto whitespace-pre-wrap rounded-lg border border-outline-variant/60 bg-white/70 p-3 text-xs leading-relaxed text-on-surface-variant">
+                {preview.text}
+              </pre>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
+                취소
+              </Button>
+              <Button type="button" className="flex-1 gap-1.5" onClick={onConfirm}>
+                <Send className="h-4 w-4" />
+                확인
+              </Button>
+            </div>
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function ExpenseCard({
   expense,
   members,
   memberPhotos,
   canManage = false,
+  selectionMode = false,
+  selected = false,
+  onSelectToggle,
   onMenuClick,
 }: {
   expense: Expense;
   members: Record<string, string>;
   memberPhotos: Record<string, string | null>;
   canManage?: boolean;
+  selectionMode?: boolean;
+  selected?: boolean;
+  onSelectToggle?: () => void;
   onMenuClick?: () => void;
 }) {
   const meta = CATEGORY_META[expense.category];
@@ -532,9 +1052,12 @@ function ExpenseCard({
     <div
       role="button"
       tabIndex={0}
-      // Phase 5에서 편집 다이얼로그 연결
-      onClick={() => {}}
-      className="glass-panel p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99]"
+      onClick={() => {
+        if (selectionMode) onSelectToggle?.();
+      }}
+      className={`glass-panel p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99] ${
+        selectionMode && selected ? "border-primary/50 bg-primary/5" : ""
+      }`}
     >
       <div
         className={`w-12 h-12 rounded-lg flex items-center justify-center border ${meta.iconBoxClass}`}
@@ -591,7 +1114,26 @@ function ExpenseCard({
           {isConfirmed ? "정산 완료" : "정산 예정"}
         </p>
       </div>
-      {canManage && (
+      {selectionMode ? (
+        <button
+          type="button"
+          aria-label={selected ? "선택 해제" : "정산 요청 선택"}
+          aria-pressed={selected}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectToggle?.();
+          }}
+          className={`shrink-0 rounded-full p-1 transition-colors ${
+            selected ? "text-primary" : "text-primary/70 hover:text-primary"
+          }`}
+        >
+          {selected ? (
+            <CircleCheck className="h-6 w-6 fill-primary/10" strokeWidth={2.4} />
+          ) : (
+            <Circle className="h-6 w-6" strokeWidth={2.2} />
+          )}
+        </button>
+      ) : canManage ? (
         <button
           type="button"
           aria-label="수정/삭제 메뉴"
@@ -605,7 +1147,7 @@ function ExpenseCard({
             more_vert
           </span>
         </button>
-      )}
+      ) : null}
     </div>
   );
 }
