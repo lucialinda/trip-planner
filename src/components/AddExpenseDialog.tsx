@@ -22,7 +22,6 @@ import {
   type ExpenseCategory,
 } from "@/lib/expenses";
 import {
-  ALL_CURRENCIES,
   getCurrencyMeta,
 } from "@/lib/currencies";
 import {
@@ -55,7 +54,7 @@ export interface AddExpenseDialogProps {
   editingExpense?: Expense | null;
   /** Phase 4 settings 도입 전이라 기본은 전체 카테고리. */
   enabledCategories?: ExpenseCategory[];
-  /** Phase 4 settings 도입 전이라 기본은 KRW + JPY. */
+  /** 기본 지원 통화. */
   enabledCurrencies?: string[];
   /** 기본 통화 (없으면 enabledCurrencies 중 첫 비-KRW, 그것도 없으면 "KRW") */
   defaultCurrency?: string;
@@ -88,7 +87,7 @@ export function AddExpenseDialog({
   members,
   editingExpense = null,
   enabledCategories = ALL_CATEGORIES,
-  enabledCurrencies = ["KRW", "JPY"],
+  enabledCurrencies = ["EUR", "USD", "KRW"],
   defaultCurrency,
 }: AddExpenseDialogProps) {
   const { user } = useAuth();
@@ -110,7 +109,8 @@ export function AddExpenseDialog({
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState(false);
   const [paidByUid, setPaidByUid] = useState<string>("");
-  const [paidAtLocal, setPaidAtLocal] = useState<string>("");
+  const [paidDateLocal, setPaidDateLocal] = useState<string>("");
+  const [paidTimeLocal, setPaidTimeLocal] = useState<string>("");
   const [participants, setParticipants] = useState<Record<string, true>>({});
   const [saving, setSaving] = useState(false);
   const isEditMode = !!editingExpense;
@@ -131,7 +131,9 @@ export function AddExpenseDialog({
       setRateLoading(false);
       setRateError(false);
       setPaidByUid(editingExpense.paidByUid);
-      setPaidAtLocal(toDatetimeLocalValue(editingExpense.paidAt));
+      const [date, time] = toDatetimeLocalValue(editingExpense.paidAt).split("T");
+      setPaidDateLocal(date ?? "");
+      setPaidTimeLocal(time ?? "");
       setParticipants(editingExpense.participants ?? {});
       setSaving(false);
       return;
@@ -148,7 +150,9 @@ export function AddExpenseDialog({
     setRateLoading(false);
     setRateError(false);
     setPaidByUid(me);
-    setPaidAtLocal(toDatetimeLocalValue(new Date()));
+    const [date, time] = toDatetimeLocalValue(new Date()).split("T");
+    setPaidDateLocal(date ?? "");
+    setPaidTimeLocal(time ?? "");
     // 정산 인원: 멤버 전원 기본 체크
     const init: Record<string, true> = {};
     for (const uid of memberUids) init[uid] = true;
@@ -271,7 +275,7 @@ export function AddExpenseDialog({
     }
     const desc = description.trim();
     if (!desc) {
-      toast.error("어디에 썼는지 적어주세요.");
+      toast.error("지출 내역을 입력해주세요.");
       return;
     }
     const localNum = parseFloat(localAmount);
@@ -297,12 +301,16 @@ export function AddExpenseDialog({
       toast.error("정산 인원이 비어 있어요.");
       return;
     }
+    if (!paidDateLocal) {
+      toast.error("결제일을 선택해주세요.");
+      return;
+    }
     let paidAt: Date;
     try {
-      paidAt = new Date(paidAtLocal);
+      paidAt = new Date(`${paidDateLocal}T${paidTimeLocal || "00:00"}`);
       if (isNaN(paidAt.getTime())) throw new Error("invalid date");
     } catch {
-      toast.error("결제 일시가 올바르지 않아요.");
+      toast.error("결제일이 올바르지 않아요.");
       return;
     }
 
@@ -354,8 +362,8 @@ export function AddExpenseDialog({
   // ---------- 파생값 ----------
 
   const currencyMeta = getCurrencyMeta(localCurrency);
-  const visibleCurrencies = ALL_CURRENCIES.filter((c) =>
-    enabledCurrencies.includes(c.code),
+  const visibleCurrencies = Array.from(new Set(enabledCurrencies)).map((code) =>
+    getCurrencyMeta(code),
   );
   const visibleCategories = ALL_CATEGORIES.filter((c) =>
     enabledCategories.includes(c),
@@ -377,7 +385,7 @@ export function AddExpenseDialog({
             <h3 className="text-xs font-semibold text-on-surface-variant mb-2">
               카테고리
             </h3>
-            <div className="grid grid-cols-4 gap-2">
+            <div className="grid grid-cols-7 gap-1">
               {visibleCategories.map((c) => {
                 const meta = CATEGORY_META[c];
                 const active = category === c;
@@ -387,25 +395,20 @@ export function AddExpenseDialog({
                     type="button"
                     onClick={() => setCategory(c)}
                     aria-pressed={active}
-                    className={`flex flex-col items-center gap-1 rounded-lg border p-2 transition-all ${
+                    title={meta.label}
+                    className={`flex h-9 min-w-0 items-center justify-center rounded-lg border transition-all ${
                       active
-                        ? "border-primary bg-primary/10 ring-2 ring-primary/40"
-                        : "border-outline-variant bg-white/40 hover:border-primary/40"
+                        ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/30"
+                        : "border-outline-variant bg-white/40 text-on-surface-variant hover:border-primary/40"
                     }`}
                   >
                     <span
-                      className={`material-symbols-outlined text-[22px] ${
-                        active ? "text-primary" : "text-on-surface-variant"
-                      }`}
+                      className="material-symbols-outlined text-[20px]"
                       style={{ fontVariationSettings: active ? "'FILL' 1" : undefined }}
                     >
                       {meta.icon}
                     </span>
-                    <span
-                      className={`text-[11px] font-semibold ${
-                        active ? "text-primary" : "text-on-surface-variant"
-                      }`}
-                    >
+                    <span className="sr-only">
                       {meta.label}
                     </span>
                   </button>
@@ -414,29 +417,28 @@ export function AddExpenseDialog({
             </div>
           </section>
 
-          {/* 2. 설명 */}
+          {/* 2. 지출 내역 */}
           <section>
             <h3 className="text-xs font-semibold text-on-surface-variant mb-2">
-              내용
+              지출 내역
             </h3>
             <Input
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="어디에 썼나요?"
+              placeholder="지출 내역"
             />
           </section>
 
-          {/* 3. 금액 */}
+          {/* 3. 지출금액 */}
           <section className="space-y-2">
-            <h3 className="text-xs font-semibold text-on-surface-variant">금액</h3>
+            <h3 className="text-xs font-semibold text-on-surface-variant">지출금액</h3>
 
-            <div className="flex gap-2">
-              {/* 통화 select */}
+            <div className="grid grid-cols-[108px_minmax(0,1fr)_minmax(0,1fr)] gap-2">
               <select
                 value={localCurrency}
                 onChange={(e) => handleCurrencyChange(e.target.value)}
-                className="h-9 rounded-md border border-outline-variant bg-white/60 px-2 text-sm font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                aria-label="통화 선택"
+                className="h-10 rounded-md border border-outline-variant bg-white/60 px-2 text-sm font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
+                aria-label="결제 통화"
               >
                 {visibleCurrencies.map((c) => (
                   <option key={c.code} value={c.code}>
@@ -445,7 +447,6 @@ export function AddExpenseDialog({
                 ))}
               </select>
 
-              {/* 현지 금액 */}
               <Input
                 type="number"
                 inputMode="decimal"
@@ -453,9 +454,29 @@ export function AddExpenseDialog({
                 min="0"
                 value={localAmount}
                 onChange={(e) => handleLocalAmountChange(e.target.value)}
-                placeholder={currencyMeta.symbol + "금액"}
-                className="flex-1"
+                placeholder="결제 통화"
+                className="min-w-0"
               />
+
+              <div className="relative min-w-0">
+                <Input
+                  type="number"
+                  inputMode="numeric"
+                  step="1"
+                  min="0"
+                  value={krwAmount}
+                  onChange={(e) => {
+                    setKrwAmount(e.target.value);
+                    setKrwManuallyEdited(true);
+                  }}
+                  placeholder="원화"
+                />
+                {rateLoading && !krwManuallyEdited && (
+                  <div className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* 환율 표시 (KRW가 아닐 때만) */}
@@ -482,27 +503,6 @@ export function AddExpenseDialog({
               </div>
             )}
 
-            {/* 원화 금액 */}
-            <div className="relative">
-              <Input
-                type="number"
-                inputMode="numeric"
-                step="1"
-                min="0"
-                value={krwAmount}
-                onChange={(e) => {
-                  setKrwAmount(e.target.value);
-                  setKrwManuallyEdited(true);
-                }}
-                placeholder="₩원화 금액"
-              />
-              {rateLoading && !krwManuallyEdited && (
-                <div className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                </div>
-              )}
-            </div>
-
             {krwManuallyEdited && localCurrency !== "KRW" && (
               <button
                 type="button"
@@ -514,7 +514,7 @@ export function AddExpenseDialog({
             )}
           </section>
 
-          {/* 4. 결제자 + 결제 일시 */}
+          {/* 4. 결제자 + 결제일 */}
           <section className="space-y-2">
             <h3 className="text-xs font-semibold text-on-surface-variant">결제 정보</h3>
 
@@ -538,13 +538,21 @@ export function AddExpenseDialog({
 
             <div>
               <label className="text-[11px] text-on-surface-variant mb-1 block">
-                결제 일시
+                결제일
               </label>
-              <Input
-                type="datetime-local"
-                value={paidAtLocal}
-                onChange={(e) => setPaidAtLocal(e.target.value)}
-              />
+              <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
+                <Input
+                  type="date"
+                  value={paidDateLocal}
+                  required
+                  onChange={(e) => setPaidDateLocal(e.target.value)}
+                />
+                <Input
+                  type="time"
+                  value={paidTimeLocal}
+                  onChange={(e) => setPaidTimeLocal(e.target.value)}
+                />
+              </div>
             </div>
           </section>
 

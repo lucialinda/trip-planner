@@ -11,7 +11,7 @@ export type ExpenseCategory =
   | "shopping"
   | "etc";
 
-export type ExpenseStatus = "tentative" | "confirmed";
+export type ExpenseStatus = "tentative" | "requested" | "confirmed";
 
 export interface Expense {
   id: string;
@@ -28,6 +28,9 @@ export interface Expense {
   /** confirmed로 바꿀 때 잠그는 실제 원화 금액 (선택) */
   confirmedKrwAmount?: number;
   status: ExpenseStatus;
+  settlementRequestId?: string;
+  settlementRequestedAt?: Date;
+  settledAt?: Date;
   paidAt: Date;
   /** 정산 참여자 uid 맵 (결제자 포함). 비어 있으면 호출 측에서 멤버 전원으로 해석 */
   participants: Record<string, true>;
@@ -119,6 +122,9 @@ export function fromDoc(d: QueryDocumentSnapshot): Expense {
     confirmedRate: v.confirmedRate as number | undefined,
     confirmedKrwAmount: v.confirmedKrwAmount as number | undefined,
     status: (v.status as ExpenseStatus) ?? "tentative",
+    settlementRequestId: v.settlementRequestId as string | undefined,
+    settlementRequestedAt: ts("settlementRequestedAt"),
+    settledAt: ts("settledAt"),
     paidAt: ts("paidAt") ?? ts("createdAt") ?? new Date(),
     participants:
       v.participants && typeof v.participants === "object"

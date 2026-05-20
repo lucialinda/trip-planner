@@ -55,17 +55,13 @@ service cloud.firestore {
             'photoURL',
             'settlementAccountBank',
             'settlementAccountNumber',
-            'settlementAccountHolder',
-            'settlementDefaultCurrency',
-            'settlementDefaultRate'
+            'settlementAccountHolder'
           ])
           && (!('name' in request.resource.data) || request.resource.data.name is string)
           && (!('photoURL' in request.resource.data) || request.resource.data.photoURL is string || request.resource.data.photoURL == null)
           && (!('settlementAccountBank' in request.resource.data) || request.resource.data.settlementAccountBank is string)
           && (!('settlementAccountNumber' in request.resource.data) || request.resource.data.settlementAccountNumber is string)
-          && (!('settlementAccountHolder' in request.resource.data) || request.resource.data.settlementAccountHolder is string)
-          && (!('settlementDefaultCurrency' in request.resource.data) || request.resource.data.settlementDefaultCurrency is string)
-          && (!('settlementDefaultRate' in request.resource.data) || request.resource.data.settlementDefaultRate is string);
+          && (!('settlementAccountHolder' in request.resource.data) || request.resource.data.settlementAccountHolder is string);
       }
 
       allow read: if signedIn();
@@ -193,6 +189,9 @@ service cloud.firestore {
               'status',
               'paidAt',
               'participants',
+              'settlementRequestId',
+              'settlementRequestedAt',
+              'settledAt',
               'createdByUid',
               'createdBy',
               'createdAt',
@@ -209,7 +208,7 @@ service cloud.firestore {
             && request.resource.data.rate > 0
             && request.resource.data.krwAmount is number
             && request.resource.data.krwAmount > 0
-            && request.resource.data.status in ['tentative', 'confirmed']
+            && request.resource.data.status in ['tentative', 'requested', 'confirmed']
             && request.resource.data.paidAt is timestamp
             && request.resource.data.participants is map
             && request.resource.data.participants.keys().size() > 0
@@ -240,6 +239,18 @@ service cloud.firestore {
                 request.resource.data.confirmedKrwAmount is number
                 && request.resource.data.confirmedKrwAmount > 0
               )
+            )
+            && (
+              !('settlementRequestId' in request.resource.data)
+              || request.resource.data.settlementRequestId is string
+            )
+            && (
+              !('settlementRequestedAt' in request.resource.data)
+              || request.resource.data.settlementRequestedAt is timestamp
+            )
+            && (
+              !('settledAt' in request.resource.data)
+              || request.resource.data.settledAt is timestamp
             );
         }
 
@@ -253,6 +264,68 @@ service cloud.firestore {
             && request.resource.data.createdAt == resource.data.createdAt;
         }
 
+        function isDirectExpenseUpdate() {
+          return isExpenseOwner()
+            && resource.data.status != 'requested'
+            && request.resource.data.status in ['tentative', 'confirmed']
+            && !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+              'settlementRequestId',
+              'settlementRequestedAt',
+              'settledAt'
+            ]);
+        }
+
+        function isRequestingExpenseSettlement() {
+          return resource.data.status == 'tentative'
+            && request.resource.data.status == 'requested'
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'settlementRequestId',
+              'settlementRequestedAt',
+              'updatedAt'
+            ])
+            && request.resource.data.settlementRequestId is string
+            && request.resource.data.settlementRequestedAt is timestamp
+            && existsAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.settlementRequestId))
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.settlementRequestId)).data.status == 'requested'
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.settlementRequestId)).data.requestedByUid == request.auth.uid
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.settlementRequestId)).data.expenseIds.hasAny([expenseId]);
+        }
+
+        function isCompletingRequestedExpense() {
+          return resource.data.status == 'requested'
+            && request.resource.data.status == 'confirmed'
+            && resource.data.settlementRequestId is string
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'settledAt', 'updatedAt'])
+            && request.resource.data.settledAt is timestamp
+            && existsAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.settlementRequestId))
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.settlementRequestId)).data.status == 'completed'
+            && (
+              isAdmin()
+              || getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.settlementRequestId)).data.completedByUid == request.auth.uid
+            );
+        }
+
+        function isCancellingRequestedExpense() {
+          return resource.data.status == 'requested'
+            && request.resource.data.status == 'tentative'
+            && resource.data.settlementRequestId is string
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status',
+              'settlementRequestId',
+              'settlementRequestedAt',
+              'updatedAt'
+            ])
+            && !('settlementRequestId' in request.resource.data)
+            && !('settlementRequestedAt' in request.resource.data)
+            && existsAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.settlementRequestId))
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.settlementRequestId)).data.status == 'cancelled'
+            && (
+              isAdmin()
+              || getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.settlementRequestId)).data.cancelledByUid == request.auth.uid
+            );
+        }
+
         allow read: if isTripMember(tripId) || isAdmin();
         allow create: if isAdmin()
           || (isTripMember(tripId)
@@ -260,11 +333,136 @@ service cloud.firestore {
           && isOwnExpenseCreate());
         allow update: if isAdmin()
           || (isTripMember(tripId)
-          && isExpenseOwner()
           && hasValidExpenseShape()
-          && preservesExpenseAuditFields());
+          && preservesExpenseAuditFields()
+          && (
+            isDirectExpenseUpdate()
+            || isRequestingExpenseSettlement()
+            || isCompletingRequestedExpense()
+            || isCancellingRequestedExpense()
+          ));
         allow delete: if isAdmin()
           || (isTripMember(tripId) && isExpenseOwner());
+      }
+
+      match /settlementRequests/{requestId} {
+        function hasValidSettlementRequestShape() {
+          return request.resource.data.keys().hasOnly([
+              'tripId',
+              'title',
+              'status',
+              'requestedByUid',
+              'requestedByName',
+              'requestedAt',
+              'completedAt',
+              'completedByUid',
+              'completedByName',
+              'cancelledAt',
+              'cancelledByUid',
+              'cancelledByName',
+              'cancelReason',
+              'expenseIds',
+              'expenseSnapshots',
+              'transfers',
+              'totalExpenseAmount',
+              'transferTotal',
+              'shareUrl',
+              'shareMessage',
+              'createdAt',
+              'updatedAt'
+            ])
+            && request.resource.data.tripId == tripId
+            && request.resource.data.title is string
+            && request.resource.data.status in ['requested', 'completed', 'cancelled']
+            && request.resource.data.requestedByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+            && request.resource.data.requestedByName is string
+            && request.resource.data.requestedAt is timestamp
+            && request.resource.data.expenseIds is list
+            && request.resource.data.expenseIds.size() > 0
+            && request.resource.data.expenseIds.size() <= 50
+            && request.resource.data.expenseSnapshots is list
+            && request.resource.data.expenseSnapshots.size() == request.resource.data.expenseIds.size()
+            && request.resource.data.transfers is list
+            && request.resource.data.transfers.size() <= 50
+            && request.resource.data.totalExpenseAmount is number
+            && request.resource.data.totalExpenseAmount >= 0
+            && request.resource.data.transferTotal is number
+            && request.resource.data.transferTotal >= 0
+            && request.resource.data.shareUrl is string
+            && request.resource.data.createdAt is timestamp
+            && request.resource.data.updatedAt is timestamp
+            && (!('shareMessage' in request.resource.data) || request.resource.data.shareMessage is string)
+            && (!('completedAt' in request.resource.data) || request.resource.data.completedAt is timestamp)
+            && (!('completedByUid' in request.resource.data) || request.resource.data.completedByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids)
+            && (!('completedByName' in request.resource.data) || request.resource.data.completedByName is string)
+            && (!('cancelledAt' in request.resource.data) || request.resource.data.cancelledAt is timestamp)
+            && (!('cancelledByUid' in request.resource.data) || request.resource.data.cancelledByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids)
+            && (!('cancelledByName' in request.resource.data) || request.resource.data.cancelledByName is string)
+            && (!('cancelReason' in request.resource.data) || request.resource.data.cancelReason is string);
+        }
+
+        function preservesSettlementRequestBaseFields() {
+          return request.resource.data.tripId == resource.data.tripId
+            && request.resource.data.title == resource.data.title
+            && request.resource.data.requestedByUid == resource.data.requestedByUid
+            && request.resource.data.requestedByName == resource.data.requestedByName
+            && request.resource.data.requestedAt == resource.data.requestedAt
+            && request.resource.data.expenseIds == resource.data.expenseIds
+            && request.resource.data.expenseSnapshots == resource.data.expenseSnapshots
+            && request.resource.data.transfers == resource.data.transfers
+            && request.resource.data.totalExpenseAmount == resource.data.totalExpenseAmount
+            && request.resource.data.transferTotal == resource.data.transferTotal
+            && request.resource.data.shareUrl == resource.data.shareUrl
+            && (!('shareMessage' in resource.data) || request.resource.data.shareMessage == resource.data.shareMessage)
+            && request.resource.data.createdAt == resource.data.createdAt;
+        }
+
+        function firstExpenseIsLinkedAfter() {
+          return request.resource.data.expenseIds.size() > 0
+            && existsAfter(/databases/$(database)/documents/trips/$(tripId)/expenses/$(request.resource.data.expenseIds[0]))
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/expenses/$(request.resource.data.expenseIds[0])).data.status == 'requested'
+            && getAfter(/databases/$(database)/documents/trips/$(tripId)/expenses/$(request.resource.data.expenseIds[0])).data.settlementRequestId == requestId;
+        }
+
+        allow read: if isTripMember(tripId) || isAdmin();
+        allow create: if isTripMember(tripId)
+          && hasValidSettlementRequestShape()
+          && request.resource.data.status == 'requested'
+          && request.resource.data.requestedByUid == request.auth.uid
+          && firstExpenseIsLinkedAfter()
+          && !('completedAt' in request.resource.data)
+          && !('cancelledAt' in request.resource.data);
+        allow update: if (isTripMember(tripId) || isAdmin())
+          && hasValidSettlementRequestShape()
+          && preservesSettlementRequestBaseFields()
+          && resource.data.status == 'requested'
+          && (
+            (
+              request.resource.data.status == 'completed'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status',
+                'completedAt',
+                'completedByUid',
+                'completedByName',
+                'updatedAt'
+              ])
+              && request.resource.data.completedByUid == request.auth.uid
+              && (resource.data.requestedByUid == request.auth.uid || isAdmin())
+            )
+            || (
+              request.resource.data.status == 'cancelled'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status',
+                'cancelledAt',
+                'cancelledByUid',
+                'cancelledByName',
+                'updatedAt'
+              ])
+              && request.resource.data.cancelledByUid == request.auth.uid
+              && (resource.data.requestedByUid == request.auth.uid || isAdmin())
+            )
+          );
+        allow delete: if false;
       }
 
       match /threads/{threadId} {
