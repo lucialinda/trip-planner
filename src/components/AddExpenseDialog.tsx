@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
-import { addDoc, collection, doc, serverTimestamp, Timestamp, updateDoc } from "firebase/firestore";
+import {
+  addDoc,
+  collection,
+  doc,
+  serverTimestamp,
+  Timestamp,
+  updateDoc,
+} from "firebase/firestore";
 import { toast } from "sonner";
 
 import { db } from "@/lib/firebase";
@@ -15,19 +22,24 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   CATEGORY_META,
   type Expense,
   type ExpenseCategory,
+  type ExchangeRateStatus,
 } from "@/lib/expenses";
+import { getCurrencyMeta } from "@/lib/currencies";
+import { fetchKrwRate, getCachedKrwRate } from "@/lib/exchangeRate";
 import {
-  getCurrencyMeta,
-} from "@/lib/currencies";
-import {
-  fetchKrwRate,
-  getCachedKrwRate,
-} from "@/lib/exchangeRate";
+  buildKrwPayload,
+  buildFxEstimatedPayload,
+  buildFxFinalizedPayload,
+} from "@/lib/expenseCalc";
+
+import { BasicInfoSection } from "@/components/expense/BasicInfoSection";
+import { PaymentAmountSection } from "@/components/expense/PaymentAmountSection";
+import { FxStatusSection } from "@/components/expense/FxStatusSection";
+import { ParticipantsSection } from "@/components/expense/ParticipantsSection";
 
 // ---------- 상수 ----------
 
@@ -52,11 +64,8 @@ export interface AddExpenseDialogProps {
   members: Record<string, string>;
   /** 기존 지출을 넣으면 수정 모드로 동작 */
   editingExpense?: Expense | null;
-  /** Phase 4 settings 도입 전이라 기본은 전체 카테고리. */
   enabledCategories?: ExpenseCategory[];
-  /** 기본 지원 통화. */
   enabledCurrencies?: string[];
-  /** 기본 통화 (없으면 enabledCurrencies 중 첫 비-KRW, 그것도 없으면 "KRW") */
   defaultCurrency?: string;
 }
 
@@ -64,16 +73,15 @@ export interface AddExpenseDialogProps {
 
 function toDatetimeLocalValue(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(
-    d.getDate(),
-  )}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function pickInitialCurrency(
   enabled: string[],
   defaultCurrency: string | undefined,
 ): string {
-  if (defaultCurrency && enabled.includes(defaultCurrency)) return defaultCurrency;
+  if (defaultCurrency && enabled.includes(defaultCurrency))
+    return defaultCurrency;
   const nonKrw = enabled.find((c) => c !== "KRW");
   return nonKrw ?? "KRW";
 }
@@ -98,38 +106,55 @@ export function AddExpenseDialog({
     [enabledCurrencies, defaultCurrency],
   );
 
-  // ---------- form state ----------
+  // ── form state ────────────────────────────────────────────
   const [category, setCategory] = useState<ExpenseCategory | null>(null);
   const [description, setDescription] = useState("");
-  const [localCurrency, setLocalCurrency] = useState<string>(initialCurrency);
-  const [localAmount, setLocalAmount] = useState<string>("");
-  const [krwAmount, setKrwAmount] = useState<string>("");
-  const [krwManuallyEdited, setKrwManuallyEdited] = useState(false);
+
+  // 결제 통화 / 금액
+  const [paymentCurrency, setPaymentCurrency] = useState<string>(initialCurrency);
+  const [amountInput, setAmountInput] = useState<string>("");
+
+  // 환율
   const [rate, setRate] = useState<number | null>(null);
   const [rateLoading, setRateLoading] = useState(false);
   const [rateError, setRateError] = useState(false);
+
+  // 환율 확정 상태 (외화일 때만 의미 있음)
+  const [exchangeRateStatus, setExchangeRateStatus] =
+    useState<ExchangeRateStatus>("estimated");
+  const [finalizedKrwInput, setFinalizedKrwInput] = useState<string>("");
+
+  // 결제 정보
   const [paidByUid, setPaidByUid] = useState<string>("");
   const [paidDateLocal, setPaidDateLocal] = useState<string>("");
   const [paidTimeLocal, setPaidTimeLocal] = useState<string>("");
   const [participants, setParticipants] = useState<Record<string, true>>({});
+
   const [saving, setSaving] = useState(false);
   const isEditMode = !!editingExpense;
 
-  // ---------- 다이얼로그 열릴 때 초기화 ----------
+  // ── 다이얼로그 열릴 때 초기화 ─────────────────────────────
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect */
     if (!open) return;
 
     if (editingExpense) {
+      const currency = editingExpense.paymentCurrency ?? editingExpense.localCurrency;
       setCategory(editingExpense.category);
       setDescription(editingExpense.description);
-      setLocalCurrency(editingExpense.localCurrency);
-      setLocalAmount(String(editingExpense.localAmount));
-      setKrwAmount(String(editingExpense.krwAmount));
-      setKrwManuallyEdited(false);
-      setRate(editingExpense.rate ?? null);
+      setPaymentCurrency(currency);
+      setAmountInput(String(editingExpense.foreignAmount ?? editingExpense.localAmount));
+      setRate(editingExpense.exchangeRate ?? editingExpense.rate ?? null);
       setRateLoading(false);
       setRateError(false);
+      setExchangeRateStatus(
+        editingExpense.exchangeRateStatus ??
+          (currency !== "KRW" ? "estimated" : "estimated"),
+      );
+      setFinalizedKrwInput(
+        editingExpense.finalizedKrwAmount
+          ? String(editingExpense.finalizedKrwAmount)
+          : "",
+      );
       setPaidByUid(editingExpense.paidByUid);
       const [date, time] = toDatetimeLocalValue(editingExpense.paidAt).split("T");
       setPaidDateLocal(date ?? "");
@@ -139,34 +164,37 @@ export function AddExpenseDialog({
       return;
     }
 
+    // 신규 입력 초기화
     const me = user?.uid ?? memberUids[0] ?? "";
     setCategory(null);
     setDescription("");
-    setLocalCurrency(initialCurrency);
-    setLocalAmount("");
-    setKrwAmount("");
-    setKrwManuallyEdited(false);
-    setRate(initialCurrency === "KRW" ? 1 : getCachedKrwRate(initialCurrency) ?? null);
+    setPaymentCurrency(initialCurrency);
+    setAmountInput("");
+    setRate(
+      initialCurrency === "KRW"
+        ? 1
+        : getCachedKrwRate(initialCurrency) ?? null,
+    );
     setRateLoading(false);
     setRateError(false);
+    setExchangeRateStatus("estimated");
+    setFinalizedKrwInput("");
     setPaidByUid(me);
     const [date, time] = toDatetimeLocalValue(new Date()).split("T");
     setPaidDateLocal(date ?? "");
     setPaidTimeLocal(time ?? "");
-    // 정산 인원: 멤버 전원 기본 체크
     const init: Record<string, true> = {};
     for (const uid of memberUids) init[uid] = true;
     setParticipants(init);
     setSaving(false);
-    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, editingExpense, user, memberUids, initialCurrency]);
 
-  // ---------- 환율 fetch (debounce) — KRW는 핸들러에서 직접 동기화하므로 비-KRW만 ----------
+  // ── 환율 fetch (debounce) ─────────────────────────────────
   useEffect(() => {
     if (!open) return;
-    if (localCurrency === "KRW") return;
+    if (paymentCurrency === "KRW") return;
 
-    const amountNum = parseFloat(localAmount);
+    const amountNum = parseFloat(amountInput);
     if (!Number.isFinite(amountNum) || amountNum <= 0) return;
 
     let cancelled = false;
@@ -174,19 +202,15 @@ export function AddExpenseDialog({
       if (cancelled) return;
       setRateLoading(true);
       try {
-        const r = await fetchKrwRate(localCurrency);
+        const r = await fetchKrwRate(paymentCurrency);
         if (cancelled) return;
         setRate(r);
         setRateError(false);
-        if (!krwManuallyEdited) {
-          const computed = Math.round(amountNum * r);
-          setKrwAmount(String(computed));
-        }
       } catch (e) {
         console.error("[AddExpenseDialog] fetchKrwRate failed", e);
         if (cancelled) return;
         setRateError(true);
-        toast.error("환율 조회 실패. 원화를 직접 입력해주세요.");
+        toast.error("환율 조회 실패. 직접 원화 금액을 입력해주세요.");
       } finally {
         if (!cancelled) setRateLoading(false);
       }
@@ -196,28 +220,19 @@ export function AddExpenseDialog({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [open, localAmount, localCurrency, krwManuallyEdited]);
+  }, [open, amountInput, paymentCurrency]);
 
-  // ---------- 핸들러 ----------
-
-  const handleLocalAmountChange = (value: string) => {
-    setLocalAmount(value);
-    // KRW면 즉시 1:1 동기화 (수동 수정 안 한 경우만)
-    if (localCurrency === "KRW" && !krwManuallyEdited) {
-      setKrwAmount(value);
-    }
-  };
+  // ── 핸들러 ────────────────────────────────────────────────
 
   const handleCurrencyChange = (newCurrency: string) => {
-    setLocalCurrency(newCurrency);
-    setKrwManuallyEdited(false);
+    setPaymentCurrency(newCurrency);
     setRateError(false);
     setRateLoading(false);
+    setExchangeRateStatus("estimated");
+    setFinalizedKrwInput("");
     if (newCurrency === "KRW") {
       setRate(1);
-      setKrwAmount(localAmount); // 즉시 1:1 동기화
     } else {
-      // 비-KRW로 바뀌면 캐시된 환율이 있으면 즉시 표시, 없으면 effect의 fetch가 채움
       const cached = getCachedKrwRate(newCurrency);
       setRate(cached ?? null);
     }
@@ -232,17 +247,13 @@ export function AddExpenseDialog({
         previousPaidByUid &&
         selectedUids.length === 1 &&
         selectedUids[0] === previousPaidByUid;
-
-      if (wasOnlyPreviousPayer) {
-        return { [uid]: true };
-      }
-
+      if (wasOnlyPreviousPayer) return { [uid]: true };
       return { ...prev, [uid]: true };
     });
   };
 
   const toggleParticipant = (uid: string) => {
-    if (uid === paidByUid) return; // 결제자는 해제 불가
+    if (uid === paidByUid) return;
     setParticipants((prev) => {
       const next = { ...prev };
       if (next[uid]) {
@@ -264,6 +275,8 @@ export function AddExpenseDialog({
     setParticipants(paidByUid ? { [paidByUid]: true } : {});
   };
 
+  // ── 저장 ─────────────────────────────────────────────────
+
   const handleSave = async () => {
     if (!user) {
       toast.error("로그인이 필요합니다.");
@@ -278,21 +291,15 @@ export function AddExpenseDialog({
       toast.error("지출 내역을 입력해주세요.");
       return;
     }
-    const localNum = parseFloat(localAmount);
-    if (!Number.isFinite(localNum) || localNum <= 0) {
+    const amountNum = parseFloat(amountInput);
+    if (!Number.isFinite(amountNum) || amountNum <= 0) {
       toast.error("금액을 입력해주세요.");
-      return;
-    }
-    const krwNum = parseFloat(krwAmount);
-    if (!Number.isFinite(krwNum) || krwNum <= 0) {
-      toast.error("원화 금액을 확인해주세요.");
       return;
     }
     if (!paidByUid || !members[paidByUid]) {
       toast.error("결제자를 선택해주세요.");
       return;
     }
-    // 정산 인원: 결제자는 자동 포함되어 있으므로 0명 시나리오는 보호용 검증
     const finalParticipants: Record<string, true> = {
       ...participants,
       [paidByUid]: true,
@@ -305,6 +312,16 @@ export function AddExpenseDialog({
       toast.error("결제일을 선택해주세요.");
       return;
     }
+
+    // 외화 + finalized 검증
+    if (paymentCurrency !== "KRW" && exchangeRateStatus === "finalized") {
+      const finalKrw = parseFloat(finalizedKrwInput);
+      if (!Number.isFinite(finalKrw) || finalKrw <= 0) {
+        toast.error("최종 청구 원화 금액을 입력해주세요.");
+        return;
+      }
+    }
+
     let paidAt: Date;
     try {
       paidAt = new Date(`${paidDateLocal}T${paidTimeLocal || "00:00"}`);
@@ -314,12 +331,27 @@ export function AddExpenseDialog({
       return;
     }
 
-    // KRW일 때 rate=1, 그 외엔 fetch한 rate가 있어야 함 (rateError 시에는 사용자 수동 입력이라
-    // rate가 null일 수 있음 → localNum/krwNum로 역산)
-    const effectiveRate =
-      localCurrency === "KRW"
-        ? 1
-        : rate ?? (localNum > 0 ? krwNum / localNum : 0);
+    // ── payload 조립 ──────────────────────────────────────
+    let amountPayload;
+    if (paymentCurrency === "KRW") {
+      amountPayload = buildKrwPayload(amountNum);
+    } else if (exchangeRateStatus === "finalized") {
+      const effectiveRate = rate ?? (amountNum > 0 ? parseFloat(finalizedKrwInput) / amountNum : 0);
+      amountPayload = buildFxFinalizedPayload(
+        paymentCurrency,
+        amountNum,
+        effectiveRate,
+        parseFloat(finalizedKrwInput),
+      );
+    } else {
+      // estimated
+      const effectiveRate = rate ?? 0;
+      if (effectiveRate <= 0) {
+        toast.error("환율을 불러오지 못했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      amountPayload = buildFxEstimatedPayload(paymentCurrency, amountNum, effectiveRate);
+    }
 
     setSaving(true);
     try {
@@ -328,10 +360,19 @@ export function AddExpenseDialog({
         description: desc,
         paidByUid,
         paidBy: members[paidByUid] ?? "",
-        localCurrency,
-        localAmount: localNum,
-        rate: effectiveRate,
-        krwAmount: Math.round(krwNum),
+        // 신규 필드
+        paymentCurrency: amountPayload.paymentCurrency,
+        foreignAmount: amountPayload.foreignAmount,
+        exchangeRate: amountPayload.exchangeRate,
+        exchangeRateStatus: amountPayload.exchangeRateStatus ?? null,
+        estimatedKrwAmount: amountPayload.estimatedKrwAmount ?? null,
+        finalizedKrwAmount: amountPayload.finalizedKrwAmount ?? null,
+        cardSettlementConfirmed: amountPayload.cardSettlementConfirmed ?? false,
+        // 하위 호환 필드 (기존 쿼리/뷰가 localCurrency / localAmount / rate / krwAmount 를 참조)
+        localCurrency: amountPayload.localCurrency,
+        localAmount: amountPayload.localAmount,
+        rate: amountPayload.rate,
+        krwAmount: amountPayload.krwAmount,
         status: "tentative",
         paidAt: Timestamp.fromDate(paidAt),
         participants: finalParticipants,
@@ -339,7 +380,10 @@ export function AddExpenseDialog({
       };
 
       if (isEditMode && editingExpense) {
-        await updateDoc(doc(db, "trips", tripId, "expenses", editingExpense.id), payload);
+        await updateDoc(
+          doc(db, "trips", tripId, "expenses", editingExpense.id),
+          payload,
+        );
         toast.success("지출을 수정했어요.");
       } else {
         await addDoc(collection(db, "trips", tripId, "expenses"), {
@@ -359,290 +403,111 @@ export function AddExpenseDialog({
     }
   };
 
-  // ---------- 파생값 ----------
+  // ── 파생값 ───────────────────────────────────────────────
 
-  const currencyMeta = getCurrencyMeta(localCurrency);
-  const visibleCurrencies = Array.from(new Set(enabledCurrencies)).map((code) =>
-    getCurrencyMeta(code),
+  const visibleCurrencies = Array.from(new Set(enabledCurrencies)).map(
+    getCurrencyMeta,
   );
   const visibleCategories = ALL_CATEGORIES.filter((c) =>
     enabledCategories.includes(c),
   );
+  const isKrw = paymentCurrency === "KRW";
+  const foreignAmountNum = parseFloat(amountInput);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md sm:max-w-md max-h-[90vh] overflow-y-auto rounded-xl">
-        <DialogHeader>
-          <DialogTitle>{isEditMode ? "지출 수정" : "지출 추가"}</DialogTitle>
-          <DialogDescription>
-            결제한 항목을 기록하면 자동으로 1/n 정산이 계산돼요.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-md sm:max-w-md max-h-[92vh] overflow-y-auto rounded-2xl p-0">
+        {/* 헤더 */}
+        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-outline-variant px-5 pt-5 pb-4 rounded-t-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold">
+              {isEditMode ? "지출 수정" : "지출 추가"}
+            </DialogTitle>
+            <DialogDescription className="text-xs text-on-surface-variant">
+              결제한 항목을 기록하면 자동으로 1/n 정산이 계산돼요.
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="space-y-5 mt-2">
-          {/* 1. 카테고리 */}
-          <section>
-            <h3 className="text-xs font-semibold text-on-surface-variant mb-2">
-              카테고리
-            </h3>
-            <div className="grid grid-cols-7 gap-1">
-              {visibleCategories.map((c) => {
-                const meta = CATEGORY_META[c];
-                const active = category === c;
-                return (
-                  <button
-                    key={c}
-                    type="button"
-                    onClick={() => setCategory(c)}
-                    aria-pressed={active}
-                    title={meta.label}
-                    className={`flex h-9 min-w-0 items-center justify-center rounded-lg border transition-all ${
-                      active
-                        ? "border-primary bg-primary/10 text-primary ring-1 ring-primary/30"
-                        : "border-outline-variant bg-white/40 text-on-surface-variant hover:border-primary/40"
-                    }`}
-                  >
-                    <span
-                      className="material-symbols-outlined text-[20px]"
-                      style={{ fontVariationSettings: active ? "'FILL' 1" : undefined }}
-                    >
-                      {meta.icon}
-                    </span>
-                    <span className="sr-only">
-                      {meta.label}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </section>
+        {/* 본문 */}
+        <div className="px-4 py-4 space-y-3">
+          {/* 1. 기본 정보 */}
+          <BasicInfoSection
+            category={category}
+            onCategoryChange={setCategory}
+            visibleCategories={visibleCategories}
+            description={description}
+            onDescriptionChange={setDescription}
+            paidByUid={paidByUid}
+            onPaidByChange={handlePaidByChange}
+            members={members}
+            currentUserUid={user?.uid}
+            paidDateLocal={paidDateLocal}
+            onPaidDateChange={setPaidDateLocal}
+            paidTimeLocal={paidTimeLocal}
+            onPaidTimeChange={setPaidTimeLocal}
+          />
 
-          {/* 2. 지출 내역 */}
-          <section>
-            <h3 className="text-xs font-semibold text-on-surface-variant mb-2">
-              지출 내역
-            </h3>
-            <Input
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="지출 내역"
+          {/* 2. 결제 금액 */}
+          <PaymentAmountSection
+            paymentCurrency={paymentCurrency}
+            onCurrencyChange={handleCurrencyChange}
+            visibleCurrencies={visibleCurrencies}
+            amountInput={amountInput}
+            onAmountChange={setAmountInput}
+            rate={rate}
+            rateLoading={rateLoading}
+            rateError={rateError}
+          />
+
+          {/* 3. 환율 확정 상태 (외화만) */}
+          {!isKrw && (
+            <FxStatusSection
+              paymentCurrency={paymentCurrency}
+              foreignAmount={
+                Number.isFinite(foreignAmountNum) ? foreignAmountNum : 0
+              }
+              rate={rate}
+              exchangeRateStatus={exchangeRateStatus}
+              onStatusChange={setExchangeRateStatus}
+              finalizedKrwInput={finalizedKrwInput}
+              onFinalizedKrwChange={setFinalizedKrwInput}
             />
-          </section>
+          )}
 
-          {/* 3. 지출금액 */}
-          <section className="space-y-2">
-            <h3 className="text-xs font-semibold text-on-surface-variant">지출금액</h3>
-
-            <div className="grid grid-cols-[108px_minmax(0,1fr)_minmax(0,1fr)] gap-2">
-              <select
-                value={localCurrency}
-                onChange={(e) => handleCurrencyChange(e.target.value)}
-                className="h-10 rounded-md border border-outline-variant bg-white/60 px-2 text-sm font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-                aria-label="결제 통화"
-              >
-                {visibleCurrencies.map((c) => (
-                  <option key={c.code} value={c.code}>
-                    {c.flag} {c.code}
-                  </option>
-                ))}
-              </select>
-
-              <Input
-                type="number"
-                inputMode="decimal"
-                step={currencyMeta.decimals === 0 ? "1" : "0.01"}
-                min="0"
-                value={localAmount}
-                onChange={(e) => handleLocalAmountChange(e.target.value)}
-                placeholder="결제 통화"
-                className="min-w-0"
-              />
-
-              <div className="relative min-w-0">
-                <Input
-                  type="number"
-                  inputMode="numeric"
-                  step="1"
-                  min="0"
-                  value={krwAmount}
-                  onChange={(e) => {
-                    setKrwAmount(e.target.value);
-                    setKrwManuallyEdited(true);
-                  }}
-                  placeholder="원화"
-                />
-                {rateLoading && !krwManuallyEdited && (
-                  <div className="absolute right-2 top-1/2 -translate-y-1/2 text-on-surface-variant/60">
-                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* 환율 표시 (KRW가 아닐 때만) */}
-            {localCurrency !== "KRW" && (
-              <div className="flex items-center justify-between text-[11px] text-on-surface-variant px-1">
-                <span>
-                  {rateLoading ? (
-                    <span className="inline-flex items-center gap-1">
-                      <Loader2 className="w-3 h-3 animate-spin" /> 환율 불러오는 중…
-                    </span>
-                  ) : rateError ? (
-                    <span className="text-rose-500">
-                      환율을 불러오지 못했어요. 원화를 직접 입력하세요.
-                    </span>
-                  ) : rate !== null ? (
-                    <>
-                      1 {localCurrency} ≈ {rate.toFixed(2)} KRW
-                      <span className="ml-1 text-on-surface-variant/60">(가환율)</span>
-                    </>
-                  ) : (
-                    "금액을 입력하면 환율이 표시돼요"
-                  )}
-                </span>
-              </div>
-            )}
-
-            {krwManuallyEdited && localCurrency !== "KRW" && (
-              <button
-                type="button"
-                onClick={() => setKrwManuallyEdited(false)}
-                className="text-[11px] text-primary font-semibold underline-offset-2 hover:underline"
-              >
-                자동 환산으로 되돌리기
-              </button>
-            )}
-          </section>
-
-          {/* 4. 결제자 + 결제일 */}
-          <section className="space-y-2">
-            <h3 className="text-xs font-semibold text-on-surface-variant">결제 정보</h3>
-
-            <div>
-              <label className="text-[11px] text-on-surface-variant mb-1 block">
-                결제자
-              </label>
-              <select
-                value={paidByUid}
-                onChange={(e) => handlePaidByChange(e.target.value)}
-                className="w-full h-9 rounded-md border border-outline-variant bg-white/60 px-2 text-sm font-medium text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/40"
-              >
-                {memberUids.map((uid) => (
-                  <option key={uid} value={uid}>
-                    {members[uid]}
-                    {uid === user?.uid ? " (나)" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="text-[11px] text-on-surface-variant mb-1 block">
-                결제일
-              </label>
-              <div className="grid grid-cols-[minmax(0,1fr)_120px] gap-2">
-                <Input
-                  type="date"
-                  value={paidDateLocal}
-                  required
-                  onChange={(e) => setPaidDateLocal(e.target.value)}
-                />
-                <Input
-                  type="time"
-                  value={paidTimeLocal}
-                  onChange={(e) => setPaidTimeLocal(e.target.value)}
-                />
-              </div>
-            </div>
-          </section>
-
-          {/* 5. 정산 인원 */}
-          <section>
-            <div className="flex items-center justify-between mb-2">
-              <h3 className="text-xs font-semibold text-on-surface-variant">
-                정산 인원
-              </h3>
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={selectAllParticipants}
-                  className="text-[11px] font-semibold text-primary px-2 py-0.5 rounded-full hover:bg-primary/10"
-                >
-                  전원 선택
-                </button>
-                <button
-                  type="button"
-                  onClick={selectOnlyPayer}
-                  className="text-[11px] font-semibold text-on-surface-variant px-2 py-0.5 rounded-full hover:bg-primary/10 hover:text-primary"
-                >
-                  결제자만
-                </button>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              {memberUids.map((uid) => {
-                const checked = !!participants[uid] || uid === paidByUid;
-                const locked = uid === paidByUid;
-                const name = members[uid] ?? "(이름 없음)";
-                return (
-                  <label
-                    key={uid}
-                    className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
-                      checked
-                        ? "border-primary/40 bg-primary/5"
-                        : "border-outline-variant bg-white/40 hover:border-primary/30"
-                    } ${locked ? "opacity-90" : "cursor-pointer"}`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={locked}
-                      onChange={() => toggleParticipant(uid)}
-                      className="h-4 w-4 accent-primary"
-                    />
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/15 text-primary text-xs font-bold">
-                      {name.charAt(0)}
-                    </div>
-                    <span className="text-sm text-on-surface flex-1">
-                      {name}
-                      {uid === user?.uid && (
-                        <span className="text-on-surface-variant"> (나)</span>
-                      )}
-                    </span>
-                    {locked && (
-                      <span className="text-[10px] font-semibold text-primary/80 bg-primary/10 px-1.5 py-0.5 rounded-full">
-                        결제자
-                      </span>
-                    )}
-                  </label>
-                );
-              })}
-            </div>
-          </section>
+          {/* 4. 정산 인원 */}
+          <ParticipantsSection
+            memberUids={memberUids}
+            members={members}
+            participants={participants}
+            paidByUid={paidByUid}
+            currentUserUid={user?.uid}
+            onToggle={toggleParticipant}
+            onSelectAll={selectAllParticipants}
+            onSelectOnlyPayer={selectOnlyPayer}
+          />
         </div>
 
         {/* footer */}
-        <div className="flex gap-2 pt-4">
+        <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-outline-variant px-4 py-4 flex gap-2 rounded-b-2xl">
           <Button
             variant="outline"
-            className="flex-1"
+            className="flex-1 rounded-xl h-12"
             onClick={() => onOpenChange(false)}
             disabled={saving}
           >
             취소
           </Button>
           <Button
-            className="flex-1"
+            className="flex-[2] rounded-xl h-12 text-base font-semibold shadow-sm"
             onClick={handleSave}
             disabled={saving}
           >
             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isEditMode ? "수정 완료" : "저장"}
+            {isEditMode ? "수정 완료" : "저장하기"}
           </Button>
         </div>
       </DialogContent>
     </Dialog>
   );
 }
-  

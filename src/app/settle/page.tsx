@@ -1057,24 +1057,18 @@ function SettleContent() {
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
       <header className="sticky top-0 z-40 flex items-center justify-between bg-white/80 backdrop-blur-md p-4 border-b border-outline-variant/30">
-        <button
-          type="button"
-          onClick={() => {
-            if (isRequestsTab && tripId) {
-              router.push(`/settle?id=${tripId}`);
-              return;
-            }
-            if (typeof window !== "undefined" && window.history.length > 1) {
-              router.back();
-            } else {
-              router.push("/");
-            }
-          }}
-          aria-label="뒤로가기"
-          className="p-2 -ml-2 text-primary hover:bg-primary/10 active:scale-95 transition-all rounded-full"
-        >
-          <span className="material-symbols-outlined">arrow_back</span>
-        </button>
+        {isRequestsTab && tripId ? (
+          <button
+            type="button"
+            onClick={() => router.replace(`/settle?id=${tripId}`)}
+            aria-label="뒤로가기"
+            className="p-2 -ml-2 text-primary hover:bg-primary/10 active:scale-95 transition-all rounded-full"
+          >
+            <span className="material-symbols-outlined">arrow_back</span>
+          </button>
+        ) : (
+          <div className="w-10" />
+        )}
         <h2 className="text-on-surface text-lg font-bold leading-tight tracking-tight">
           {isRequestsTab ? "정산 요청 관리" : "정산"}
         </h2>
@@ -1106,7 +1100,7 @@ function SettleContent() {
                 requests={settlementRequests}
                 loading={requestsLoading}
                 activeRequestId={requestIdParam}
-                onOpenRequest={(requestId) => router.push(`/settle?id=${tripId}&tab=requests&request=${requestId}`)}
+                onOpenRequest={(requestId) => router.replace(`/settle?id=${tripId}&tab=requests&request=${requestId}`)}
               />
             ) : (
               <>
@@ -1139,7 +1133,11 @@ function SettleContent() {
                     amount={topCategory ? byCategory[topCategory] : 0}
                     total={total}
                   />
-                  <div className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32">
+                  <button
+                    type="button"
+                    onClick={() => router.replace(`/settle?id=${tripId}&tab=requests`)}
+                    className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left hover:bg-white/60 transition-colors active:scale-[0.98]"
+                  >
                     <div className="flex items-center justify-between">
                       <span
                         className="material-symbols-outlined text-tertiary"
@@ -1150,20 +1148,15 @@ function SettleContent() {
                     </div>
                     <div>
                       <p className="text-on-surface-variant text-xs mb-0.5">
-                        1인당 정산 금액
+                        정산 현황
                       </p>
-                      {/* TODO(Phase 6): 임시 계산값 — 실제 정산 방식 반영 필요 */}
-                      <p className="font-bold text-on-surface">{formatKrw(perPerson)}</p>
+                      <p className="text-sm font-bold text-on-surface">
+                        요청 {settlementRequests.filter((r) => r.status === "requested").length}건 · 완료 {settlementRequests.filter((r) => r.status === "completed").length}건
+                      </p>
                     </div>
-                  </div>
+                  </button>
                 </div>
 
-                <SettlementRequestSummary
-                  requests={settlementRequests}
-                  loading={requestsLoading}
-                  onManage={() => router.push(`/settle?id=${tripId}&tab=requests`)}
-                  onOpenRequest={(requestId) => router.push(`/settle?id=${tripId}&request=${requestId}`)}
-                />
 
                 {/* 지출 내역 헤더 + 정렬 토글 */}
                 <div className="flex items-center justify-between pt-2">
@@ -1418,7 +1411,7 @@ function SettleContent() {
         canManage={canManageSettlementRequest(selectedSettlementRequest)}
         actionLoading={requestActionLoading}
         onOpenChange={(open) => {
-          if (!open && tripId) router.push(isRequestsTab ? `/settle?id=${tripId}&tab=requests` : `/settle?id=${tripId}`);
+          if (!open && tripId) router.replace(isRequestsTab ? `/settle?id=${tripId}&tab=requests` : `/settle?id=${tripId}`);
         }}
         onComplete={() => {
           if (selectedSettlementRequest) handleCompleteSettlementRequest(selectedSettlementRequest);
@@ -1494,63 +1487,32 @@ function SettlementRequestSummary({
   requests,
   loading,
   onManage,
-  onOpenRequest,
 }: {
   requests: SettlementRequest[];
   loading: boolean;
   onManage: () => void;
-  onOpenRequest: (requestId: string) => void;
 }) {
-  const requestedCount = requests.filter((request) => request.status === "requested").length;
-  const completedCount = requests.filter((request) => request.status === "completed").length;
-  const cancelledCount = requests.filter((request) => request.status === "cancelled").length;
-  const recentRequest =
-    requests.find((request) => request.status === "requested") ??
-    requests.find((request) => request.status === "completed") ??
-    null;
+  const requestedCount = requests.filter((r) => r.status === "requested").length;
+  const completedCount = requests.filter((r) => r.status === "completed").length;
 
   return (
-    <section className="glass-panel rounded-xl p-4 space-y-3">
-      <div className="flex items-start justify-between gap-3">
+    <section className="glass-panel rounded-xl p-4">
+      <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-lg font-bold text-on-surface">정산 요청</h3>
-          <p className="mt-1 text-sm text-on-surface-variant">
-            요청중 {requestedCount}건 · 완료 {completedCount}건
-            {cancelledCount > 0 ? ` · 취소 ${cancelledCount}건` : ""}
+          <p className="mt-0.5 text-sm text-on-surface-variant">
+            {loading ? "불러오는 중..." : `요청 ${requestedCount}건 · 완료 ${completedCount}건`}
           </p>
         </div>
         <button
           type="button"
           onClick={onManage}
-          className="shrink-0 text-xs font-semibold text-primary hover:underline"
+          className="shrink-0 w-8 h-8 flex items-center justify-center rounded-full text-on-surface-variant hover:bg-outline-variant/30 transition-colors text-lg font-bold"
+          aria-label="관리"
         >
-          관리하기 &gt;
+          &hellip;
         </button>
       </div>
-
-      {loading ? (
-        <div className="rounded-lg bg-white/60 px-3 py-3 text-sm text-on-surface-variant">
-          정산 요청을 불러오는 중...
-        </div>
-      ) : recentRequest ? (
-        <button
-          type="button"
-          onClick={() => onOpenRequest(recentRequest.id)}
-          className="w-full rounded-lg border border-outline-variant/60 bg-white/60 px-3 py-3 text-left transition-colors hover:border-primary/40"
-        >
-          <p className="text-xs font-semibold text-primary">
-            최근 {REQUEST_STATUS_LABEL[recentRequest.status]}
-          </p>
-          <p className="mt-1 truncate text-sm font-bold text-on-surface">{recentRequest.title}</p>
-          <p className="mt-1 text-xs text-on-surface-variant">
-            {recentRequest.requestedByName} 요청 · 지출 {recentRequest.expenseIds.length}건 · 송금 {formatKrw(recentRequest.transferTotal)}
-          </p>
-        </button>
-      ) : (
-        <div className="rounded-lg bg-white/60 px-3 py-3 text-sm text-on-surface-variant">
-          아직 정산 요청이 없어요.
-        </div>
-      )}
     </section>
   );
 }
@@ -2241,6 +2203,7 @@ function SettleSkeleton() {
         <div className="h-20 rounded-xl bg-white/40 animate-pulse" />
         <div className="h-20 rounded-xl bg-white/40 animate-pulse" />
         <div className="h-20 rounded-xl bg-white/40 animate-pulse" />
+        <div className="h-20 rounded-xl bg-white/40 animate-pulse" />
       </div>
     </>
   );
@@ -2252,8 +2215,8 @@ export default function SettlePage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
-          로딩중...
+        <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col bg-background shadow-sm sm:border-x px-4 pt-20 pb-32 space-y-6">
+          <SettleSkeleton />
         </div>
       }
     >
@@ -2261,4 +2224,3 @@ export default function SettlePage() {
     </Suspense>
   );
 }
-    
