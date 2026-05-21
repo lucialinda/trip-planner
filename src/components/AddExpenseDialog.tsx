@@ -282,6 +282,10 @@ export function AddExpenseDialog({
       toast.error("로그인이 필요합니다.");
       return;
     }
+    if (isEditMode && editingExpense?.status !== "tentative") {
+      toast.error("정산 요청중이거나 완료된 지출은 수정할 수 없어요.");
+      return;
+    }
     if (!category) {
       toast.error("카테고리를 선택해주세요.");
       return;

@@ -13,7 +13,6 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  setDoc,
   type FirestoreError,
 } from "firebase/firestore";
 import { toast } from "sonner";
@@ -22,11 +21,11 @@ import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
 import { BottomNav } from "@/components/BottomNav";
 import { AddExpenseDialog } from "@/components/AddExpenseDialog";
+import { ProfileDialog } from "@/components/ProfileDialog";
 import { SwipeableItem, type SwipeableItemHandle } from "@/components/ui/SwipeableItem";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import {
   CATEGORY_META,
   type Expense,
@@ -37,7 +36,7 @@ import {
   getParticipantUids,
 } from "@/lib/expenses";
 import { isAdminUid } from "@/lib/admin";
-import { Check, Circle, CircleCheck, Edit2, Send, Trash2 } from "lucide-react";
+import { Check, Circle, CircleCheck, Edit2, Share2, Trash2 } from "lucide-react";
 
 // ---------- 트립 데이터 (settle에서 필요한 최소 필드) ----------
 
@@ -163,6 +162,11 @@ const REQUEST_STATUS_LABEL: Record<SettlementRequestStatus, string> = {
   completed: "완료",
   cancelled: "취소",
 };
+const REQUEST_STATUS_BADGE_CLASS: Record<SettlementRequestStatus, string> = {
+  requested: "border-amber-200 bg-amber-50 text-amber-700",
+  completed: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  cancelled: "border-slate-200 bg-slate-100 text-slate-600",
+};
 type SettlementRequestFilter = "all" | SettlementRequestStatus;
 const REQUEST_FILTER_OPTIONS: { key: SettlementRequestFilter; label: string }[] = [
   { key: "all", label: "전체" },
@@ -170,6 +174,25 @@ const REQUEST_FILTER_OPTIONS: { key: SettlementRequestFilter; label: string }[] 
   { key: "completed", label: "완료" },
   { key: "cancelled", label: "취소" },
 ];
+const CATEGORY_ORDER = Object.keys(CATEGORY_META) as ExpenseCategory[];
+const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
+  food: "🍽️",
+  cafe: "☕",
+  transit: "🚇",
+  lodging: "🛏️",
+  activity: "🎟️",
+  shopping: "🛍️",
+  etc: "📦",
+};
+
+type CategoryReportRow = {
+  category: ExpenseCategory;
+  meta: (typeof CATEGORY_META)[ExpenseCategory];
+  items: Expense[];
+  amount: number;
+  percent: number;
+  barClass: string;
+};
 
 function formatPaidDate(date: Date): string {
   const y = date.getFullYear();
@@ -267,8 +290,7 @@ function buildSettlementShareMessage(data: Omit<SettlementPreviewData, "text">):
   );
 
   return [
-    `[${data.title}]`,
-    "\n🧾 정산 대상",
+    "🧾 정산 대상",
     `총 ${data.expenseCount}건 · 총 지출 ${formatKrw(data.total)}`,
     `상계 후 송금 ${formatKrw(data.transferTotal)}`,
     "\n📌 지출 내역",
@@ -404,6 +426,14 @@ function buildOptimizedTransfers({ balances, memberNames }: SettlementBalanceRes
   return transfers;
 }
 
+function payerFirstUids(participantUids: string[], payerUid: string): string[] {
+  return [...participantUids].sort((a, b) => {
+    if (a === payerUid) return -1;
+    if (b === payerUid) return 1;
+    return 0;
+  });
+}
+
 function buildSettlementPreviewData({
   requestId,
   tripName,
@@ -456,7 +486,7 @@ function buildSettlementPreviewData({
     transfers,
     transferTotal,
     expenses: expenses.map((expense) => {
-      const participantUids = getParticipantUids(expense, memberUids);
+      const participantUids = payerFirstUids(getParticipantUids(expense, memberUids), expense.paidByUid);
       return {
         id: expense.id,
         title: expense.description || CATEGORY_META[expense.category].label,
@@ -485,7 +515,7 @@ function buildExpenseSnapshots(
 ): SettlementExpenseSnapshot[] {
   const memberUids = Object.keys(members);
   return expenses.map((expense) => {
-    const participantUids = getParticipantUids(expense, memberUids);
+    const participantUids = payerFirstUids(getParticipantUids(expense, memberUids), expense.paidByUid);
     return {
       expenseId: expense.id,
       title: expense.description || CATEGORY_META[expense.category].label,
@@ -519,12 +549,10 @@ function SettleContent() {
   const [listMode, setListMode] = useState<ListMode>("latest");
   const [listModeMenuOpen, setListModeMenuOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [settlementSettings, setSettlementSettings] = useState<SettlementSettings>(DEFAULT_SETTLEMENT_SETTINGS);
-  const [settingsDraft, setSettingsDraft] = useState<SettlementSettings>(DEFAULT_SETTLEMENT_SETTINGS);
-  const [settingsSaving, setSettingsSaving] = useState(false);
   const [settlementPreview, setSettlementPreview] = useState<SettlementPreviewData | null>(null);
   const [settlementConfirming, setSettlementConfirming] = useState(false);
   const [requestActionLoading, setRequestActionLoading] = useState(false);
@@ -649,7 +677,7 @@ function SettleContent() {
     return () => {
       cancelled = true;
     };
-  }, [trip?.members]);
+  }, [trip?.members, profileOpen]);
 
   useEffect(() => {
     if (!user) return;
@@ -662,12 +690,10 @@ function SettleContent() {
         );
         if (!cancelled) {
           setSettlementSettings(settings);
-          setSettingsDraft(settings);
         }
       } catch {
         if (!cancelled) {
           setSettlementSettings(DEFAULT_SETTLEMENT_SETTINGS);
-          setSettingsDraft(DEFAULT_SETTLEMENT_SETTINGS);
         }
       }
     })();
@@ -675,7 +701,7 @@ function SettleContent() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, profileOpen]);
 
   // 집계
   const memberCount = useMemo(
@@ -740,6 +766,9 @@ function SettleContent() {
   );
 
   const isRequestsTab = tabParam === "requests";
+  const isCategoryReportTab = tabParam === "categories";
+  const isSubPage = isRequestsTab || isCategoryReportTab;
+  const profilePhoto = user ? memberPhotos[user.uid] || user.photoURL || null : null;
 
 
   const isInitialLoading =
@@ -774,7 +803,7 @@ function SettleContent() {
 
   const canManageExpense = (expense: Expense) => {
     if (!user) return false;
-    if (expense.status === "requested") return false;
+    if (expense.status !== "tentative") return false;
     return (
       isAdminUid(user.uid) ||
       expense.createdByUid === user.uid ||
@@ -782,44 +811,12 @@ function SettleContent() {
     );
   };
 
-  const openSettlementSettings = () => {
-    setSettingsDraft(settlementSettings);
-    setSettingsOpen(true);
-  };
-
-  const handleSaveSettlementSettings = async () => {
-    if (!user) return;
-    const draft: SettlementSettings = {
-      settlementAccountBank: settingsDraft.settlementAccountBank.trim(),
-      settlementAccountNumber: settingsDraft.settlementAccountNumber.trim(),
-      settlementAccountHolder: settingsDraft.settlementAccountHolder.trim(),
-    };
-
-    setSettingsSaving(true);
-    try {
-      await setDoc(
-        doc(db, "userProfiles", user.uid),
-        {
-          ...draft,
-          settlementDefaultCurrency: deleteField(),
-          settlementDefaultRate: deleteField(),
-        },
-        { merge: true }
-      );
-      setSettlementSettings(draft);
-      setSettingsDraft(draft);
-      setSettingsOpen(false);
-      toast.success("정산 설정을 저장했어요.");
-    } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : String(e);
-      toast.error(`정산 설정 저장 실패: ${message}`);
-    } finally {
-      setSettingsSaving(false);
-    }
-  };
-
   const handleDeleteExpense = async (expense: Expense) => {
     if (!tripId) return;
+    if (expense.status !== "tentative") {
+      toast.error("정산 요청중이거나 완료된 지출은 삭제할 수 없어요.");
+      return;
+    }
     if (!window.confirm("이 지출을 삭제할까요?")) return;
     try {
       await deleteDoc(doc(db, "trips", tripId, "expenses", expense.id));
@@ -1057,7 +1054,7 @@ function SettleContent() {
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
       <header className="sticky top-0 z-40 flex items-center justify-between bg-white/80 backdrop-blur-md p-4 border-b border-outline-variant/30">
-        {isRequestsTab && tripId ? (
+        {isSubPage && tripId ? (
           <button
             type="button"
             onClick={() => router.replace(`/settle?id=${tripId}`)}
@@ -1070,16 +1067,29 @@ function SettleContent() {
           <div className="w-10" />
         )}
         <h2 className="text-on-surface text-lg font-bold leading-tight tracking-tight">
-          {isRequestsTab ? "정산 요청 관리" : "정산"}
+          {isRequestsTab ? "정산 요청 관리" : isCategoryReportTab ? "지출 리포트" : "정산"}
         </h2>
-        <button
-          type="button"
-          aria-label="설정"
-          onClick={openSettlementSettings}
-          className="p-2 -mr-2 text-primary hover:bg-primary/10 active:scale-95 transition-all rounded-full"
-        >
-          <span className="material-symbols-outlined">more_vert</span>
-        </button>
+        {isSubPage ? (
+          <div className="w-10" />
+        ) : (
+          <button
+            type="button"
+            aria-label="프로필"
+            onClick={() => setProfileOpen(true)}
+            className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full glass-card text-primary"
+          >
+            {profilePhoto ? (
+              <Avatar className="h-10 w-10">
+                <AvatarImage src={profilePhoto} className="object-cover" />
+                <AvatarFallback className="bg-primary/10 text-sm text-primary">
+                  {(user?.displayName || "?").charAt(0)}
+                </AvatarFallback>
+              </Avatar>
+            ) : (
+              <span className="material-symbols-outlined">person</span>
+            )}
+          </button>
+        )}
       </header>
 
       {/* Main */}
@@ -1101,6 +1111,12 @@ function SettleContent() {
                 loading={requestsLoading}
                 activeRequestId={requestIdParam}
                 onOpenRequest={(requestId) => router.replace(`/settle?id=${tripId}&tab=requests&request=${requestId}`)}
+              />
+            ) : isCategoryReportTab ? (
+              <CategoryExpenseReport
+                expenses={expenses}
+                byCategory={byCategory}
+                total={total}
               />
             ) : (
               <>
@@ -1132,6 +1148,7 @@ function SettleContent() {
                     topCategory={topCategory}
                     amount={topCategory ? byCategory[topCategory] : 0}
                     total={total}
+                    onClick={() => router.replace(`/settle?id=${tripId}&tab=categories`)}
                   />
                   <button
                     type="button"
@@ -1139,19 +1156,27 @@ function SettleContent() {
                     className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left hover:bg-white/60 transition-colors active:scale-[0.98]"
                   >
                     <div className="flex items-center justify-between">
-                      <span
-                        className="material-symbols-outlined text-tertiary"
-                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      <svg
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        className="text-tertiary"
+                        aria-hidden="true"
                       >
-                        group
-                      </span>
+                        <path
+                          d="M14.3557 2.59534C14.4445 2.48261 14.6098 2.46762 14.7175 2.56254L15.6385 3.37473L12.7383 7H14.6592L16.7648 4.36797L18.417 5.82489C18.5186 5.9145 18.5304 6.06873 18.4435 6.1727L17.7523 7H19.6965C20.1905 6.27893 20.0778 5.28948 19.4091 4.69984L15.7096 1.43749C14.9561 0.77305 13.7991 0.877958 13.1775 1.66709L8.9762 7H10.8858L14.3557 2.59534ZM5.25 6.5C4.83579 6.5 4.5 6.83579 4.5 7.25C4.5 7.66421 4.83579 8 5.25 8L18.25 8C20.0449 8 21.5 9.45507 21.5 11.25V17.75C21.5 19.5449 20.0449 21 18.25 21H6.25C4.45507 21 3 19.5449 3 17.75V7.25C3 6.00736 4.00736 5 5.25 5H9.57L8.37844 6.5H5.25ZM15.5 14.75C15.5 15.1642 15.8358 15.5 16.25 15.5H18.25C18.6642 15.5 19 15.1642 19 14.75C19 14.3358 18.6642 14 18.25 14H16.25C15.8358 14 15.5 14.3358 15.5 14.75Z"
+                          fill="currentColor"
+                        />
+                      </svg>
                     </div>
                     <div>
                       <p className="text-on-surface-variant text-xs mb-0.5">
                         정산 현황
                       </p>
                       <p className="text-sm font-bold text-on-surface">
-                        요청 {settlementRequests.filter((r) => r.status === "requested").length}건 · 완료 {settlementRequests.filter((r) => r.status === "completed").length}건
+                        진행 중 {settlementRequests.filter((r) => r.status === "requested").length}건 · 완료 {settlementRequests.filter((r) => r.status === "completed").length}건
                       </p>
                     </div>
                   </button>
@@ -1349,7 +1374,7 @@ function SettleContent() {
       </main>
 
       {/* FAB */}
-      {!isRequestsTab && (
+      {!isSubPage && (
       <div className="fixed bottom-24 left-1/2 z-30 w-full max-w-3xl -translate-x-1/2 px-5 pointer-events-none">
         <button
           type="button"
@@ -1395,14 +1420,7 @@ function SettleContent() {
         />
       )}
 
-      <SettlementSettingsDialog
-        open={settingsOpen}
-        settings={settingsDraft}
-        saving={settingsSaving}
-        onOpenChange={setSettingsOpen}
-        onChange={setSettingsDraft}
-        onSave={handleSaveSettlementSettings}
-      />
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
       <SettlementRequestDetailDialog
         open={!!requestIdParam}
@@ -1501,7 +1519,7 @@ function SettlementRequestSummary({
         <div>
           <h3 className="text-lg font-bold text-on-surface">정산 요청</h3>
           <p className="mt-0.5 text-sm text-on-surface-variant">
-            {loading ? "불러오는 중..." : `요청 ${requestedCount}건 · 완료 ${completedCount}건`}
+            {loading ? "불러오는 중..." : `진행 중 ${requestedCount}건 · 완료 ${completedCount}건`}
           </p>
         </div>
         <button
@@ -1531,17 +1549,39 @@ function SettlementRequestDetailView({
   onCancel: () => void;
 }) {
   const receiverAccounts = Array.from(new Map(request.transfers.map((transfer) => [transfer.toUid, transfer])).values());
-  const handleCopyShareMessage = async () => {
+  const handleShareRequest = async () => {
     if (!request.shareMessage) {
       toast.error("저장된 공유 메시지가 없어요.");
       return;
     }
+    const title = `${request.title} 정산 요청`;
     try {
+      if (
+        navigator.share &&
+        (!navigator.canShare ||
+          navigator.canShare({
+            title,
+            text: request.shareMessage,
+          }))
+      ) {
+        await navigator.share({
+          title,
+          text: request.shareMessage,
+        });
+        return;
+      }
+
       await copyTextToClipboard(request.shareMessage);
-      toast.success("정산 요청 메시지를 복사했어요.");
+      toast.success("공유 기능을 사용할 수 없어 정산 요청 메시지를 복사했어요.");
     } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
       const message = e instanceof Error ? e.message : String(e);
-      toast.error(`복사 실패: ${message}`);
+      try {
+        await copyTextToClipboard(request.shareMessage);
+        toast.success("공유창을 열지 못해서 정산 요청 메시지를 복사했어요.");
+      } catch {
+        toast.error(`공유 실패: ${message}`);
+      }
     }
   };
 
@@ -1550,7 +1590,11 @@ function SettlementRequestDetailView({
       <section className="rounded-xl border border-primary/15 bg-primary/5 p-3.5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary">{REQUEST_STATUS_LABEL[request.status]}</p>
+            <p>
+              <span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${REQUEST_STATUS_BADGE_CLASS[request.status]}`}>
+                {REQUEST_STATUS_LABEL[request.status]}
+              </span>
+            </p>
             <h3 className="mt-1 truncate text-sm font-bold text-on-surface">{request.title}</h3>
             <p className="mt-1 text-xs text-on-surface-variant">
               {request.requestedByName} 요청 · 총 지출 ({request.expenseIds.length}건)
@@ -1638,20 +1682,24 @@ function SettlementRequestDetailView({
         </div>
       </section>
 
-      {request.shareMessage && (
-        <Button type="button" variant="outline" className="w-full" onClick={handleCopyShareMessage}>
-          공유 메시지 다시 복사
-        </Button>
-      )}
-
-      {canManage && request.status === "requested" && (
-        <div className="flex gap-2 pt-2">
-          <Button type="button" variant="outline" className="flex-1" onClick={onCancel} disabled={actionLoading}>
-            요청 취소
-          </Button>
-          <Button type="button" className="flex-1" onClick={onComplete} disabled={actionLoading}>
-            정산완료 처리
-          </Button>
+      {request.status === "requested" && (canManage || request.shareMessage) && (
+        <div className="space-y-2 pt-2">
+          {request.shareMessage && (
+            <Button type="button" variant="outline" className="w-full gap-1.5" onClick={handleShareRequest} disabled={actionLoading}>
+              <Share2 className="h-4 w-4" />
+              공유하기
+            </Button>
+          )}
+          {canManage && (
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" className="flex-1" onClick={onCancel} disabled={actionLoading}>
+                취소하기
+              </Button>
+              <Button type="button" className="flex-1" onClick={onComplete} disabled={actionLoading}>
+                정산완료
+              </Button>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -1723,7 +1771,7 @@ function SettlementRequestList({
                     {request.status === "cancelled" ? ` · 취소일 ${formatRequestDate(request.cancelledAt)}` : ""}
                   </p>
                 </div>
-                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+                <span className={`shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-semibold ${REQUEST_STATUS_BADGE_CLASS[request.status]}`}>
                   {REQUEST_STATUS_LABEL[request.status]}
                 </span>
               </div>
@@ -1732,74 +1780,6 @@ function SettlementRequestList({
         </div>
       )}
     </section>
-  );
-}
-
-function SettlementSettingsDialog({
-  open,
-  settings,
-  saving,
-  onOpenChange,
-  onChange,
-  onSave,
-}: {
-  open: boolean;
-  settings: SettlementSettings;
-  saving: boolean;
-  onOpenChange: (open: boolean) => void;
-  onChange: (settings: SettlementSettings) => void;
-  onSave: () => void;
-}) {
-  const update = (key: keyof SettlementSettings, value: string) => {
-    onChange({ ...settings, [key]: value });
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm rounded-xl">
-        <DialogHeader>
-          <DialogTitle>정산 설정</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-4 py-2">
-          <div className="space-y-2">
-            <label className="text-sm font-semibold text-on-surface">내 정산 계좌</label>
-            <div className="grid grid-cols-2 gap-2">
-              <Input
-                value={settings.settlementAccountBank}
-                onChange={(e) => update("settlementAccountBank", e.target.value)}
-                placeholder="은행"
-              />
-              <Input
-                value={settings.settlementAccountHolder}
-                onChange={(e) => update("settlementAccountHolder", e.target.value)}
-                placeholder="예금주"
-              />
-            </div>
-            <Input
-              value={settings.settlementAccountNumber}
-              onChange={(e) => update("settlementAccountNumber", e.target.value)}
-              placeholder="계좌번호"
-            />
-          </div>
-
-
-          <div className="flex gap-2 pt-2">
-            <Button
-              type="button"
-              variant="outline"
-              className="flex-1"
-              onClick={() => onOpenChange(false)}
-              disabled={saving}
-            >
-              취소
-            </Button>
-            <Button type="button" className="flex-1" onClick={onSave} disabled={saving}>
-              저장
-            </Button>
-          </div>
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -1820,7 +1800,7 @@ function SettlementPreviewDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[86vh] max-w-sm overflow-y-auto rounded-xl">
         <DialogHeader>
-          <DialogTitle>정산 요청 미리보기</DialogTitle>
+          <DialogTitle>미리보기</DialogTitle>
         </DialogHeader>
         {preview && (
           <div className="space-y-5 py-2">
@@ -1830,9 +1810,8 @@ function SettlementPreviewDialog({
               <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={confirming}>
                 취소
               </Button>
-              <Button type="button" className="flex-1 gap-1.5" onClick={onConfirm} disabled={confirming}>
-                <Send className="h-4 w-4" />
-                {confirming ? "처리중" : "확인"}
+              <Button type="button" className="flex-1" onClick={onConfirm} disabled={confirming}>
+                {confirming ? "처리중" : "정산요청"}
               </Button>
             </div>
           </div>
@@ -1845,19 +1824,6 @@ function SettlementPreviewDialog({
 function SettlementSharePreview({ preview }: { preview: SettlementPreviewData }) {
   return (
     <div className="space-y-3">
-      <section className="rounded-xl border border-primary/15 bg-primary/5 p-3.5">
-        <div className="space-y-3">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-primary">🧾 정산 대상</p>
-            <p className="mt-1 truncate text-sm font-bold text-on-surface">{preview.tripName}</p>
-          </div>
-          <div className="rounded-lg bg-white/70 px-3 py-2">
-            <p className="text-[11px] text-on-surface-variant">총 지출 ({preview.expenseCount}건)</p>
-            <p className="mt-0.5 text-base font-bold text-on-surface">{formatKrw(preview.total)}</p>
-          </div>
-        </div>
-      </section>
-
       <section className="space-y-2">
         <h4 className="text-sm font-bold text-on-surface">📌 지출 내역</h4>
         {preview.expenses.length > 0 ? (
@@ -1957,19 +1923,6 @@ function SettlementSharePreview({ preview }: { preview: SettlementPreviewData })
         </div>
       </section>
 
-      {preview.pageUrl && (
-        <section className="rounded-xl border border-outline-variant/60 bg-white/70 p-3">
-          <h4 className="text-sm font-bold text-on-surface">🔗 정산 페이지</h4>
-          <a
-            href={preview.pageUrl}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-1 block break-all text-sm font-medium text-primary underline-offset-2 hover:underline"
-          >
-            {preview.pageUrl}
-          </a>
-        </section>
-      )}
     </div>
   );
 }
@@ -2109,20 +2062,162 @@ function ExpenseCard({
   );
 }
 
+function CategoryExpenseReport({
+  expenses,
+  byCategory,
+  total,
+}: {
+  expenses: Expense[];
+  byCategory: Record<ExpenseCategory, number>;
+  total: number;
+}) {
+  const [expandedCategory, setExpandedCategory] = useState<ExpenseCategory | null>(null);
+  const rows: CategoryReportRow[] = CATEGORY_ORDER.map((category, index) => {
+    const items = expenses
+      .filter((expense) => expense.category === category)
+      .sort((a, b) => effectiveKrw(b) - effectiveKrw(a));
+    const amount = byCategory[category];
+    const percent = total > 0 ? Math.round((amount / total) * 100) : 0;
+    return {
+      category,
+      meta: CATEGORY_META[category],
+      items,
+      amount,
+      percent,
+      barClass: [
+        "bg-primary",
+        "bg-amber-500",
+        "bg-slate-500",
+        "bg-tertiary",
+        "bg-rose-500",
+        "bg-emerald-500",
+        "bg-on-surface-variant",
+      ][index],
+    };
+  });
+  rows.sort((a, b) => b.amount - a.amount);
+  const visibleRows = rows.filter((row) => row.amount > 0);
+
+  if (total <= 0) {
+    return (
+      <div className="glass-panel rounded-xl p-8 text-center">
+        <span className="material-symbols-outlined mb-2 text-4xl text-primary/70">analytics</span>
+        <p className="text-sm font-semibold text-on-surface">아직 지출 리포트가 없어요</p>
+        <p className="mt-1 text-xs text-on-surface-variant">지출을 추가하면 카테고리별 비중을 볼 수 있어요.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="glass-elevated rounded-xl p-5">
+        <p className="text-xs font-medium text-on-surface-variant">총 지출</p>
+        <div className="mt-2">
+          <div>
+            <p className="text-3xl font-extrabold tracking-tight text-primary">{formatKrw(total)}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-base font-bold text-on-surface">카테고리별 지출</h3>
+        <div className="space-y-2.5">
+          {rows.map((row) => {
+            const expanded = expandedCategory === row.category;
+            const hasItems = row.items.length > 0;
+            return (
+              <div
+                key={row.category}
+                className={`rounded-xl border bg-white/70 p-3 transition-colors ${
+                  expanded ? "border-primary/50 bg-primary/5" : "border-outline-variant/60"
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setExpandedCategory((current) => (current === row.category ? null : row.category))}
+                  disabled={!hasItems}
+                  aria-expanded={expanded}
+                  className="w-full text-left disabled:cursor-default"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span
+                        className={`material-symbols-outlined flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[18px] ${row.meta.iconBoxClass}`}
+                        style={{ fontVariationSettings: "'FILL' 1" }}
+                      >
+                        {row.meta.icon}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-on-surface">{row.meta.label}</p>
+                        <p className="text-[11px] text-on-surface-variant">{row.items.length}건 · {row.percent}%</p>
+                      </div>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      <p className="text-sm font-bold text-on-surface">{formatKrw(row.amount)}</p>
+                      {hasItems && (
+                        <span className="material-symbols-outlined text-[18px] text-on-surface-variant">
+                          {expanded ? "expand_less" : "expand_more"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-container">
+                    <div className={`h-full rounded-full ${row.barClass}`} style={{ width: `${row.percent}%` }} />
+                  </div>
+                </button>
+
+                {expanded && (
+                  <div className="mt-3 space-y-2 border-t border-outline-variant/60 pt-3">
+                    {row.items.map((expense) => (
+                      <article key={expense.id} className="rounded-xl border border-outline-variant/60 bg-white/80 px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-on-surface">{expense.description || row.meta.label}</p>
+                            <p className="mt-0.5 text-[11px] text-on-surface-variant">
+                              {expense.paidBy ? `${expense.paidBy} 결제 · ` : ""}
+                              {formatPaidDate(expense.paidAt)}
+                            </p>
+                          </div>
+                          <div className="shrink-0 text-right">
+                            <p className="text-sm font-bold text-on-surface">{formatKrw(effectiveKrw(expense))}</p>
+                            <p className="mt-0.5 text-[11px] font-semibold text-on-surface-variant">
+                              {expense.status === "confirmed" ? "정산완료" : expense.status === "requested" ? "요청중" : "미정산"}
+                            </p>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    </div>
+  );
+}
 function TopCategoryCard({
   topCategory,
   amount,
   total,
+  onClick,
 }: {
   topCategory: ExpenseCategory | null;
   amount: number;
   total: number;
+  onClick?: () => void;
 }) {
   const hasData = topCategory !== null && total > 0;
   const meta = hasData ? CATEGORY_META[topCategory] : CATEGORY_META.etc;
   const percent = hasData ? Math.round((amount / total) * 100) : 0;
   return (
-    <div className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32">
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={!hasData}
+      className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left transition-colors hover:bg-white/60 active:scale-[0.98] disabled:cursor-default disabled:hover:bg-transparent disabled:active:scale-100"
+    >
       <span
         className={`material-symbols-outlined ${
           hasData ? "text-primary" : "text-on-surface-variant/60"
@@ -2137,7 +2232,7 @@ function TopCategoryCard({
           {hasData ? `${meta.label} (${percent}%)` : "기록 없음"}
         </p>
       </div>
-    </div>
+    </button>
   );
 }
 

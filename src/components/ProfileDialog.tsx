@@ -25,6 +25,9 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
   const [editPhotoPreview, setEditPhotoPreview] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [currentPhotoURL, setCurrentPhotoURL] = useState<string | null>(null);
+  const [settlementAccountBank, setSettlementAccountBank] = useState("");
+  const [settlementAccountNumber, setSettlementAccountNumber] = useState("");
+  const [settlementAccountHolder, setSettlementAccountHolder] = useState("");
 
   useEffect(() => {
     if (!open || !user) return;
@@ -34,13 +37,20 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
     (async () => {
       try {
         const snap = await getDoc(doc(db, "userProfiles", user.uid));
-        const url = snap.exists() ? snap.data()?.photoURL : null;
+        const data = snap.exists() ? snap.data() : null;
+        const url = data?.photoURL ?? null;
         const finalUrl = url || user.photoURL || null;
         setCurrentPhotoURL(finalUrl);
         setEditPhotoPreview(finalUrl);
+        setSettlementAccountBank(typeof data?.settlementAccountBank === "string" ? data.settlementAccountBank : "");
+        setSettlementAccountNumber(typeof data?.settlementAccountNumber === "string" ? data.settlementAccountNumber : "");
+        setSettlementAccountHolder(typeof data?.settlementAccountHolder === "string" ? data.settlementAccountHolder : "");
       } catch {
         setCurrentPhotoURL(user.photoURL || null);
         setEditPhotoPreview(user.photoURL || null);
+        setSettlementAccountBank("");
+        setSettlementAccountNumber("");
+        setSettlementAccountHolder("");
       }
     })();
   }, [open, user]);
@@ -85,7 +95,13 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
       await setDoc(
         doc(db, "userProfiles", user.uid),
-        { name: newName, photoURL: photoURL || null },
+        {
+          name: newName,
+          photoURL: photoURL || null,
+          settlementAccountBank: settlementAccountBank.trim(),
+          settlementAccountNumber: settlementAccountNumber.trim(),
+          settlementAccountHolder: settlementAccountHolder.trim(),
+        },
         { merge: true }
       );
 
@@ -120,7 +136,7 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-sm rounded-xl">
+      <DialogContent className="max-h-[86vh] max-w-sm overflow-y-auto rounded-xl">
         <DialogHeader>
           <DialogTitle>내 프로필</DialogTitle>
         </DialogHeader>
@@ -145,6 +161,27 @@ export function ProfileDialog({ open, onOpenChange }: ProfileDialogProps) {
           <div className="w-full space-y-2 mt-2">
             <label className="text-sm font-semibold">닉네임</label>
             <Input value={editName} onChange={(e) => setEditName(e.target.value)} maxLength={20} />
+          </div>
+
+          <div className="w-full space-y-2">
+            <label className="text-sm font-semibold">정산 계좌</label>
+            <div className="grid grid-cols-2 gap-2">
+              <Input
+                value={settlementAccountBank}
+                onChange={(e) => setSettlementAccountBank(e.target.value)}
+                placeholder="은행"
+              />
+              <Input
+                value={settlementAccountHolder}
+                onChange={(e) => setSettlementAccountHolder(e.target.value)}
+                placeholder="예금주"
+              />
+            </div>
+            <Input
+              value={settlementAccountNumber}
+              onChange={(e) => setSettlementAccountNumber(e.target.value)}
+              placeholder="계좌번호"
+            />
           </div>
 
           <div className="flex gap-2 w-full mt-4">
