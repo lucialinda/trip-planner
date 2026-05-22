@@ -777,18 +777,6 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                           <span className="min-w-0 break-words">{timeLabel}</span>
                         </div>
                       )}
-                      {placeLink && (
-                        <a
-                          href={placeLink.href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => e.stopPropagation()}
-                          className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant hover:underline"
-                        >
-                          <MapPin className="mt-1 h-3 w-3 shrink-0" strokeWidth={2} />
-                          <span className="min-w-0 break-words">{placeLink.label}</span>
-                        </a>
-                      )}
                       {place.note && (
                         <div
                           role="button"
@@ -825,6 +813,18 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                             </Linkify>
                           </span>
                         </div>
+                      )}
+                      {placeLink && (
+                        <a
+                          href={placeLink.href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant hover:underline"
+                        >
+                          <MapPin className="mt-1 h-3 w-3 shrink-0" strokeWidth={2} />
+                          <span className="min-w-0 break-words">{placeLink.label}</span>
+                        </a>
                       )}
                     </div>
 
