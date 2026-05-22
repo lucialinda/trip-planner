@@ -34,6 +34,8 @@ import {
   formatKrw,
   fromDoc,
   getParticipantUids,
+  isEstimated,
+  isForeignCurrency,
 } from "@/lib/expenses";
 import { isAdminUid } from "@/lib/admin";
 import { Check, Circle, CircleCheck, Edit2, MoreHorizontal, Share2, Trash2 } from "lucide-react";
@@ -1960,6 +1962,12 @@ function ExpenseCard({
   const meta = CATEGORY_META[expense.category];
   const isConfirmed = expense.status === "confirmed";
   const isRequested = expense.status === "requested";
+  const estimated =
+    isEstimated(expense) ||
+    (isForeignCurrency(expense) &&
+      !expense.finalizedKrwAmount &&
+      !expense.confirmedKrwAmount &&
+      !expense.cardSettlementConfirmed);
   const krw = effectiveKrw(expense);
   const participantEntries = (
     Object.keys(expense.participants ?? {}).length > 0
@@ -1977,8 +1985,6 @@ function ExpenseCard({
         if (selectionMode) onSelectToggle?.();
       }}
       className={`glass-panel relative p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99] ${
-        !selectionMode ? "pr-12" : ""
-      } ${
         selectionMode && selected ? "border-primary/50 bg-primary/5" : ""
       }`}
     >
@@ -2051,7 +2057,14 @@ function ExpenseCard({
         )}
       </div>
       <div className="text-right shrink-0">
-        <p className="text-on-surface font-bold">{formatKrw(krw)}</p>
+        <div className="flex items-center justify-end gap-1.5">
+          {estimated && (
+            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              가환율
+            </span>
+          )}
+          <p className="text-on-surface font-bold">{formatKrw(krw)}</p>
+        </div>
         <p
           className={`text-[10px] font-semibold mt-0.5 ${
             isConfirmed ? "text-tertiary" : isRequested ? "text-amber-600" : "text-primary"
@@ -2068,9 +2081,9 @@ function ExpenseCard({
             e.stopPropagation();
             onMenuClick?.();
           }}
-          className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full border-0 bg-transparent text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+          className="absolute right-1.5 top-1 flex h-8 w-8 items-center justify-center rounded-full border-0 bg-transparent text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
         >
-          <MoreHorizontal className="h-5 w-5" strokeWidth={2} />
+          <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
         </button>
       ) : null}
     </div>
