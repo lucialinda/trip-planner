@@ -24,6 +24,8 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { ItineraryTab } from "@/components/ItineraryTab";
 import { BottomNav } from "@/components/BottomNav";
+import { ProfileDialog } from "@/components/ProfileDialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 interface TripData {
   id: string;
@@ -60,6 +62,7 @@ function TripContent() {
   const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showMembers, setShowMembers] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
     if (!user || !tripId) {
@@ -126,6 +129,39 @@ function TripContent() {
 
   const memberCount = Object.keys(trip.members || {}).length;
   const dLabel = dDayLabel(trip.startDate, trip.endDate);
+  const profilePhoto = user?.photoURL || null;
+
+  const shareMenu = (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        aria-label="공유"
+        className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
+      >
+        <Share2 className="h-4 w-4" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onClick={handleCopyLink}>
+          <LinkIcon className="mr-2 h-4 w-4" />
+          <span>초대 링크 복사</span>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={handleCopyCode}>
+          <Copy className="mr-2 h-4 w-4" />
+          <span>참가 코드 복사 (6자리)</span>
+        </DropdownMenuItem>
+        {typeof navigator !== "undefined" && !!navigator.share && (
+          <DropdownMenuItem onClick={handleNativeShare}>
+            <Share className="mr-2 h-4 w-4" />
+            <span>다른 앱으로 공유</span>
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => setShowMembers(true)}>
+          <Users className="mr-2 h-4 w-4" />
+          <span>멤버 보기 ({memberCount}명)</span>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
 
   return (
     <div className="relative min-h-screen w-full max-w-3xl mx-auto bg-slate-50 pb-24 shadow-sm sm:border-x">
@@ -135,35 +171,23 @@ function TripContent() {
         <h1 className="text-base font-bold text-on-surface tracking-tight">
           내 일정
         </h1>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            aria-label="공유"
-            className="w-10 h-10 flex items-center justify-center text-primary hover:bg-sky-50 transition-colors active:scale-95 rounded-full"
-          >
-            <Share2 className="h-5 w-5" />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={handleCopyLink}>
-              <LinkIcon className="mr-2 h-4 w-4" />
-              <span>초대 링크 복사</span>
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={handleCopyCode}>
-              <Copy className="mr-2 h-4 w-4" />
-              <span>참가 코드 복사 (6자리)</span>
-            </DropdownMenuItem>
-            {typeof navigator !== "undefined" && !!navigator.share && (
-              <DropdownMenuItem onClick={handleNativeShare}>
-                <Share className="mr-2 h-4 w-4" />
-                <span>다른 앱으로 공유</span>
-              </DropdownMenuItem>
-            )}
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={() => setShowMembers(true)}>
-              <Users className="mr-2 h-4 w-4" />
-              <span>멤버 보기 ({memberCount}명)</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <button
+          type="button"
+          aria-label="프로필"
+          onClick={() => setProfileOpen(true)}
+          className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full glass-card text-primary"
+        >
+          {profilePhoto ? (
+            <Avatar className="h-10 w-10">
+              <AvatarImage src={profilePhoto} className="object-cover" />
+              <AvatarFallback className="bg-primary/10 text-sm text-primary">
+                {(user?.displayName || "?").charAt(0)}
+              </AvatarFallback>
+            </Avatar>
+          ) : (
+            <span className="material-symbols-outlined">person</span>
+          )}
+        </button>
       </header>
 
       {/* Hero Section */}
@@ -190,6 +214,10 @@ function TripContent() {
             }`}
           />
 
+          <div className="absolute right-3 top-3 z-10">
+            {shareMenu}
+          </div>
+
           {/* 하단 텍스트 */}
           <div className="absolute bottom-4 left-4 right-4">
             <div className="min-w-0">
@@ -215,6 +243,7 @@ function TripContent() {
       </div>
 
       <MembersDialog open={showMembers} onOpenChange={setShowMembers} trip={trip} />
+      <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
       {/* 하단 네비게이션 */}
       <BottomNav />

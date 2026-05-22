@@ -1167,8 +1167,11 @@ function SettleContent() {
                   <button
                     type="button"
                     onClick={() => router.push(`/settle?id=${tripId}&tab=requests`)}
-                    className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left hover:bg-white/60 transition-colors active:scale-[0.98]"
+                    className="glass-panel relative p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left hover:bg-white/60 transition-colors active:scale-[0.98]"
                   >
+                    <span className="absolute right-1.5 top-1 flex h-8 w-8 items-center justify-center rounded-full border-0 bg-transparent text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+                      <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
+                    </span>
                     <div className="flex items-center justify-between">
                       <svg
                         width="24"
@@ -2249,8 +2252,13 @@ function TopCategoryCard({
       type="button"
       onClick={onClick}
       disabled={!hasData}
-      className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left transition-colors hover:bg-white/60 active:scale-[0.98] disabled:cursor-default disabled:hover:bg-transparent disabled:active:scale-100"
+      className="glass-panel relative p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left transition-colors hover:bg-white/60 active:scale-[0.98] disabled:cursor-default disabled:hover:bg-transparent disabled:active:scale-100"
     >
+      {hasData && (
+        <span className="absolute right-1.5 top-1 flex h-8 w-8 items-center justify-center rounded-full border-0 bg-transparent text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
+          <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
+        </span>
+      )}
       <span
         className={`material-symbols-outlined ${
           hasData ? "text-primary" : "text-on-surface-variant/60"
