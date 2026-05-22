@@ -62,6 +62,9 @@ function HomeContent() {
   const [editingHeroTrip, setEditingHeroTrip] = useState<TripSummary | null>(null);
   const [pendingHeroFile, setPendingHeroFile] = useState<File | null>(null);
   const [savingHero, setSavingHero] = useState(false);
+  const [isKakaoInAppBrowser] = useState(
+    () => typeof window !== "undefined" && /KAKAOTALK/i.test(window.navigator.userAgent)
+  );
 
   // Dev login (visible only when running against the local emulator)
   const [isEmulator, setIsEmulator] = useState(false);
@@ -74,6 +77,15 @@ function HomeContent() {
     const host = window.location.hostname;
     setIsEmulator(host === "localhost" || host === "127.0.0.1");
   }, []);
+
+  const handleGoogleLogin = async () => {
+    if (isKakaoInAppBrowser) {
+      toast.error("오른쪽 위 메뉴에서 외부 브라우저로 열기를 선택해주세요.");
+      return;
+    }
+
+    await loginWithGoogle();
+  };
 
   const handleDevLogin = async () => {
     setDevLoggingIn(true);
@@ -330,8 +342,15 @@ function HomeContent() {
           </div>
 
           <div className="w-full max-w-sm flex flex-col gap-6 items-center">
+            {isKakaoInAppBrowser && (
+              <div className="w-full rounded-2xl border border-amber-200 bg-amber-50/80 px-4 py-3 text-left text-sm leading-6 text-amber-950 clean-shadow">
+                <p className="font-semibold">Google 로그인은 카카오톡 앱 안에서는 지원되지 않습니다.</p>
+                <p>오른쪽 위 메뉴에서 “외부 브라우저로 열기”를 선택해주세요.</p>
+              </div>
+            )}
+
             <button
-              onClick={loginWithGoogle}
+              onClick={handleGoogleLogin}
               className="w-full py-4 px-6 rounded-full flex items-center justify-center gap-4 bg-white/40 backdrop-blur-md border border-white/40 hover:bg-white/60 hover:border-white/60 active:scale-[0.98] transition-all duration-300 clean-shadow"
             >
               <div className="w-6 h-6 flex items-center justify-center">
