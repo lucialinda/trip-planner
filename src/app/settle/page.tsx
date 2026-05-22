@@ -36,7 +36,7 @@ import {
   getParticipantUids,
 } from "@/lib/expenses";
 import { isAdminUid } from "@/lib/admin";
-import { Check, Circle, CircleCheck, Edit2, Share2, Trash2 } from "lucide-react";
+import { Check, Circle, CircleCheck, Edit2, MoreHorizontal, Share2, Trash2 } from "lucide-react";
 
 // ---------- 트립 데이터 (settle에서 필요한 최소 필드) ----------
 
@@ -1050,6 +1050,9 @@ function SettleContent() {
       setRequestActionLoading(false);
     }
   };
+  const showSettlementActionBar =
+    !isSubPage && filter === "tentative" && selectedExpenseIds.size > 0;
+
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
@@ -1220,26 +1223,6 @@ function SettleContent() {
 
                   </div>
                   <div className="flex shrink-0 items-center gap-1.5">
-                    {filter === "tentative" && selectionMode && filteredExpenses.length > 0 && (
-                      <>
-                        <button
-                          type="button"
-                          onClick={clearSelectedExpenses}
-                          className="px-3 py-1.5 rounded-full border border-outline-variant bg-white/60 text-xs font-semibold text-on-surface-variant"
-                        >
-                          취소
-                        </button>
-                        <button
-                          type="button"
-                          onClick={handleShareSettlementRequest}
-                          disabled={selectedExpenseIds.size === 0}
-                          className="inline-flex items-center gap-1 rounded-full bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-sm shadow-primary/20 disabled:cursor-not-allowed disabled:bg-primary/35"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                          정산요청
-                        </button>
-                      </>
-                    )}
                     <div
                       className="relative"
                       onBlur={(e) => {
@@ -1373,29 +1356,57 @@ function SettleContent() {
         )}
       </main>
 
+      {showSettlementActionBar && (
+        <div className="fixed bottom-24 left-1/2 z-40 w-full max-w-3xl -translate-x-1/2 px-4">
+          <div className="flex items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-white px-4 py-3 shadow-lg shadow-primary/10">
+            <div className="min-w-0">
+              <p className="text-sm font-bold text-on-surface">
+                {selectedExpenseIds.size}건 선택됨
+              </p>
+            </div>
+            <div className="flex shrink-0 items-center gap-3">
+              <button
+                type="button"
+                onClick={clearSelectedExpenses}
+                className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary"
+              >
+                선택 해제
+              </button>
+              <button
+                type="button"
+                onClick={handleShareSettlementRequest}
+                className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm shadow-primary/25 transition-transform active:scale-[0.98]"
+              >
+                정산요청
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* FAB */}
-      {!isSubPage && (
-      <div className="fixed bottom-24 left-1/2 z-30 w-full max-w-3xl -translate-x-1/2 px-5 pointer-events-none">
-        <button
-          type="button"
-          aria-label="지출 추가"
-          onClick={() => {
-            if (!trip || !tripId) {
-              toast.error("여행 정보를 불러오는 중이에요.");
-              return;
-            }
-            setAddOpen(true);
-          }}
-          className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-90 pointer-events-auto"
-        >
-          <span
-            className="material-symbols-outlined text-[28px]"
-            style={{ fontVariationSettings: "'FILL' 1" }}
+      {!isSubPage && !showSettlementActionBar && (
+        <div className="fixed bottom-24 left-1/2 z-30 w-full max-w-3xl -translate-x-1/2 px-5 pointer-events-none">
+          <button
+            type="button"
+            aria-label="지출 추가"
+            onClick={() => {
+              if (!trip || !tripId) {
+                toast.error("여행 정보를 불러오는 중이에요.");
+                return;
+              }
+              setAddOpen(true);
+            }}
+            className="ml-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary text-white shadow-lg shadow-primary/30 transition-transform active:scale-90 pointer-events-auto"
           >
-            add
-          </span>
-        </button>
-      </div>
+            <span
+              className="material-symbols-outlined text-[28px]"
+              style={{ fontVariationSettings: "'FILL' 1" }}
+            >
+              add
+            </span>
+          </button>
+        </div>
       )}
 
       {/* 추가 다이얼로그 (Phase 3) */}
@@ -1965,18 +1976,43 @@ function ExpenseCard({
       onClick={() => {
         if (selectionMode) onSelectToggle?.();
       }}
-      className={`glass-panel p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99] ${
+      className={`glass-panel relative p-4 rounded-xl flex items-center gap-4 cursor-pointer hover:border-primary/40 transition-all active:scale-[0.99] ${
+        !selectionMode ? "pr-12" : ""
+      } ${
         selectionMode && selected ? "border-primary/50 bg-primary/5" : ""
       }`}
     >
-      <div
-        className={`w-12 h-12 rounded-lg flex items-center justify-center border ${meta.iconBoxClass}`}
-      >
-        <span className="material-symbols-outlined">{meta.icon}</span>
-      </div>
+      {selectionMode && (
+        <button
+          type="button"
+          aria-label={selected ? "선택 해제" : "정산 요청 선택"}
+          aria-pressed={selected}
+          onClick={(e) => {
+            e.stopPropagation();
+            onSelectToggle?.();
+          }}
+          className={`shrink-0 rounded-full p-1 transition-colors ${
+            selected ? "text-primary" : "text-primary/70 hover:text-primary"
+          }`}
+        >
+          {selected ? (
+            <CircleCheck className="h-6 w-6 fill-primary/10" strokeWidth={2.4} />
+          ) : (
+            <Circle className="h-6 w-6" strokeWidth={2.2} />
+          )}
+        </button>
+      )}
       <div className="flex-1 min-w-0">
-        <h4 className="text-on-surface font-bold text-base truncate">
-          {expense.description || meta.label}
+        <h4 className="flex min-w-0 items-center gap-1.5 text-on-surface font-bold text-base">
+          <span
+            className="material-symbols-outlined shrink-0 text-[17px] leading-none text-primary/70"
+            aria-hidden="true"
+          >
+            {meta.icon}
+          </span>
+          <span className="min-w-0 truncate">
+            {expense.description || meta.label}
+          </span>
         </h4>
         <p className="text-on-surface-variant text-xs mt-0.5">
           {expense.paidBy ? `${expense.paidBy} 결제 · ` : ""}
@@ -2024,38 +2060,17 @@ function ExpenseCard({
           {isConfirmed ? "정산 완료" : isRequested ? "요청중" : "정산 예정"}
         </p>
       </div>
-      {selectionMode ? (
+      {!selectionMode && canManage ? (
         <button
           type="button"
-          aria-label={selected ? "선택 해제" : "정산 요청 선택"}
-          aria-pressed={selected}
-          onClick={(e) => {
-            e.stopPropagation();
-            onSelectToggle?.();
-          }}
-          className={`shrink-0 rounded-full p-1 transition-colors ${
-            selected ? "text-primary" : "text-primary/70 hover:text-primary"
-          }`}
-        >
-          {selected ? (
-            <CircleCheck className="h-6 w-6 fill-primary/10" strokeWidth={2.4} />
-          ) : (
-            <Circle className="h-6 w-6" strokeWidth={2.2} />
-          )}
-        </button>
-      ) : canManage ? (
-        <button
-          type="button"
-          aria-label="수정/삭제 메뉴"
+          aria-label="지출 관리 메뉴"
           onClick={(e) => {
             e.stopPropagation();
             onMenuClick?.();
           }}
-          className="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary transition-colors rounded-full"
+          className="absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full border-0 bg-transparent text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
         >
-          <span className="material-symbols-outlined text-[20px]">
-            more_vert
-          </span>
+          <MoreHorizontal className="h-5 w-5" strokeWidth={2} />
         </button>
       ) : null}
     </div>
