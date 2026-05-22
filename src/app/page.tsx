@@ -12,13 +12,25 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { CreateTripDialog } from "@/components/CreateTripDialog";
 import { TripHeroCropDialog } from "@/components/TripHeroCropDialog";
-import { Camera, Trash2 } from "lucide-react";
+import {
+  Camera,
+  Copy,
+  Link as LinkIcon,
+  Trash2,
+} from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 interface TripSummary {
   id: string;
   name?: string;
   startDate?: string;
   endDate?: string;
+  code?: string;
   members?: Record<string, string>;
   memberUids?: string[];
   createdByUid?: string;
@@ -57,6 +69,7 @@ function HomeContent() {
 
   const [profileOpen, setProfileOpen] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
+  const [membersTrip, setMembersTrip] = useState<TripSummary | null>(null);
   const [createDefaultMode, setCreateDefaultMode] = useState<"create" | "join">("create");
   const heroFileInputRef = useRef<HTMLInputElement | null>(null);
   const [editingHeroTrip, setEditingHeroTrip] = useState<TripSummary | null>(null);
@@ -303,6 +316,44 @@ function HomeContent() {
     }
   };
 
+  const buildTripJoinUrl = (trip: TripSummary) => {
+    const code = trip.code || "";
+    return `${window.location.origin}/?joinCode=${code}`;
+  };
+
+  const handleCopyInviteLink = async (trip: TripSummary) => {
+    const code = trip.code || "";
+    if (!code) {
+      toast.error("초대 코드가 없습니다.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(buildTripJoinUrl(trip));
+      toast.success("초대 링크가 복사되었습니다!");
+    } catch {
+      toast.error("링크 복사에 실패했습니다.");
+    }
+  };
+
+  const handleCopyInviteCode = async (trip: TripSummary) => {
+    const code = trip.code || "";
+    if (!code) {
+      toast.error("초대 코드가 없습니다.");
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(code);
+      toast.success(`참가 코드(${code})가 복사되었습니다!`);
+    } catch {
+      toast.error("코드 복사에 실패했습니다.");
+    }
+  };
+
+  const sheetMemberEntries = Object.entries(membersTrip?.members || {}) as [string, string][];
+  const sheetMemberCount = sheetMemberEntries.length;
+
   // ----------- Logged-out: Login screen -----------
   if (loading) {
     return (
@@ -548,6 +599,29 @@ function HomeContent() {
                         </div>
                       )}
                     </div>
+                    <button
+                      type="button"
+                      aria-label={`멤버 ${memberCount}명 및 초대`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setMembersTrip(t);
+                      }}
+                      className="ml-3 mr-auto inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-slate-100/80 text-slate-700 transition-colors hover:bg-sky-100 hover:text-primary active:bg-sky-200"
+                    >
+                      <svg
+                        width="24"
+                        height="24"
+                        viewBox="0 0 24 24"
+                        xmlns="http://www.w3.org/2000/svg"
+                        aria-hidden="true"
+                        className="h-5 w-5"
+                      >
+                        <g fill="none">
+                          <path d="M24 0v24H0V0zM12.593 23.258l-.011.002-.071.035-.02.004-.014-.004-.071-.035c-.01-.004-.019-.001-.024.005l-.004.01-.017.428.005.02.01.013.104.074.015.004.012-.004.104-.074.012-.016.004-.017-.017-.427c-.002-.01-.009-.017-.017-.018m.265-.113-.013.002-.185.093-.01.01-.003.011.018.43.005.012.008.007.201.093c.012.004.023 0 .029-.008l.004-.014-.034-.614c-.003-.012-.01-.02-.02-.022m-.715.002a.023.023 0 0 0-.027.006l-.006.014-.034.614c0 .012.007.02.017.024l.015-.002.201-.093.01-.008.004-.011.017-.43-.003-.012-.01-.01z" />
+                          <path fill="currentColor" d="M13 13a4 4 0 0 1 4 4v1.5a1.5 1.5 0 0 1-1.5 1.5h-12A1.5 1.5 0 0 1 2 18.5V17a4 4 0 0 1 4-4zm6 0a3 3 0 0 1 3 3v1.5a1.5 1.5 0 0 1-1.5 1.5H19v-2a4.992 4.992 0 0 0-2-4zM9.5 3a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9M18 6a3 3 0 1 1 0 6 3 3 0 0 1 0-6" />
+                        </g>
+                      </svg>
+                    </button>
                     <span className="text-primary text-sm font-semibold flex items-center gap-1">
                       상세보기
                       <span className="material-symbols-outlined text-base">chevron_right</span>
@@ -582,6 +656,69 @@ function HomeContent() {
       </div>
 
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <Dialog
+        open={!!membersTrip}
+        onOpenChange={(open) => {
+          if (!open) setMembersTrip(null);
+        }}
+      >
+        <DialogContent className="top-auto bottom-0 left-1/2 max-w-3xl translate-y-0 rounded-b-none rounded-t-2xl p-0 sm:top-1/2 sm:bottom-auto sm:max-w-sm sm:-translate-y-1/2 sm:rounded-xl">
+          <DialogHeader className="border-b border-slate-100 px-5 pb-3 pt-5">
+            <DialogTitle className="text-lg font-bold text-slate-900">여행 멤버</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-5 px-5 pb-6">
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">멤버 {sheetMemberCount}명</h3>
+              <div className="space-y-2">
+                {sheetMemberEntries.map(([uid, name], idx) => {
+                  const photo = memberPhotos[uid];
+                  const fallbackBg =
+                    idx === 0
+                      ? "bg-primary/15 text-primary"
+                      : idx === 1
+                      ? "bg-tertiary/15 text-tertiary"
+                      : "bg-slate-100 text-slate-600";
+                  return (
+                    <div key={uid} className="flex items-center gap-3 rounded-lg px-1 py-1.5">
+                      <Avatar className="h-9 w-9 border border-white shadow-sm">
+                        {photo ? <AvatarImage src={photo} className="object-cover" /> : null}
+                        <AvatarFallback className={`text-xs font-medium ${fallbackBg}`}>
+                          {String(name).charAt(0)}
+                        </AvatarFallback>
+                      </Avatar>
+                      <span className="min-w-0 truncate text-sm font-medium text-slate-800">
+                        {name}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">초대</h3>
+              <div className="grid gap-2">
+                <button
+                  type="button"
+                  onClick={() => membersTrip && handleCopyInviteLink(membersTrip)}
+                  className="flex h-11 items-center gap-3 rounded-xl bg-slate-50 px-3 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-sky-50 active:bg-sky-100"
+                >
+                  <LinkIcon className="h-4 w-4 text-primary" />
+                  <span>초대 링크 복사</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => membersTrip && handleCopyInviteCode(membersTrip)}
+                  className="flex h-11 items-center gap-3 rounded-xl bg-slate-50 px-3 text-left text-sm font-semibold text-slate-800 transition-colors hover:bg-sky-50 active:bg-sky-100"
+                >
+                  <Copy className="h-4 w-4 text-primary" />
+                  <span>참가 코드 복사</span>
+                </button>
+              </div>
+            </section>
+          </div>
+        </DialogContent>
+      </Dialog>
       <input
         ref={heroFileInputRef}
         type="file"

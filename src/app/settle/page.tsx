@@ -1832,10 +1832,10 @@ function SettlementPreviewDialog({
             <SettlementSharePreview preview={preview} />
 
             <div className="flex gap-2 pt-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={() => onOpenChange(false)} disabled={confirming}>
+              <Button type="button" variant="outline" className="h-11 flex-1 rounded-xl text-sm font-semibold" onClick={() => onOpenChange(false)} disabled={confirming}>
                 취소
               </Button>
-              <Button type="button" className="flex-1" onClick={onConfirm} disabled={confirming}>
+              <Button type="button" className="h-11 flex-1 rounded-xl text-sm font-semibold" onClick={onConfirm} disabled={confirming}>
                 {confirming ? "처리중" : "정산요청"}
               </Button>
             </div>

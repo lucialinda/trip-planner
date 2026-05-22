@@ -496,14 +496,14 @@ export function AddExpenseDialog({
         <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-outline-variant px-4 py-4 flex gap-2 rounded-b-2xl">
           <Button
             variant="outline"
-            className="flex-1 rounded-xl h-12"
+            className="h-11 flex-1 rounded-xl text-sm font-semibold"
             onClick={() => onOpenChange(false)}
             disabled={saving}
           >
             취소
           </Button>
           <Button
-            className="flex-[2] rounded-xl h-12 text-base font-semibold shadow-sm"
+            className="h-11 flex-1 rounded-xl text-sm font-semibold shadow-sm"
             onClick={handleSave}
             disabled={saving}
           >

@@ -997,7 +997,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
             </section>
           </div>
           <DialogFooter>
-            <Button onClick={handleSave} className="w-full">
+            <Button onClick={handleSave} className="h-11 w-full rounded-xl text-sm font-semibold">
               {editingPlace ? "수정하기" : "추가하기"}
             </Button>
           </DialogFooter>
