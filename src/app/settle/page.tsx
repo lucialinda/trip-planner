@@ -1153,11 +1153,11 @@ function SettleContent() {
                     topCategory={topCategory}
                     amount={topCategory ? byCategory[topCategory] : 0}
                     total={total}
-                    onClick={() => router.replace(`/settle?id=${tripId}&tab=categories`)}
+                    onClick={() => router.push(`/settle?id=${tripId}&tab=categories`)}
                   />
                   <button
                     type="button"
-                    onClick={() => router.replace(`/settle?id=${tripId}&tab=requests`)}
+                    onClick={() => router.push(`/settle?id=${tripId}&tab=requests`)}
                     className="glass-panel p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left hover:bg-white/60 transition-colors active:scale-[0.98]"
                   >
                     <div className="flex items-center justify-between">
