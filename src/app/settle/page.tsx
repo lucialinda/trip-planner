@@ -1067,24 +1067,24 @@ function SettleContent() {
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
-      <header className="sticky top-0 z-40 flex items-center justify-between bg-white/80 backdrop-blur-md p-4 border-b border-outline-variant/30">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-sky-100 bg-white/80 px-2 backdrop-blur-md">
         {isSubPage && tripId ? (
           <button
             type="button"
             onClick={() => router.replace(`/settle?id=${tripId}`)}
             aria-label="뒤로가기"
-            className="p-2 -ml-2 text-primary hover:bg-primary/10 active:scale-95 transition-all rounded-full"
+            className="flex h-10 w-10 items-center justify-center rounded-full text-primary transition-all hover:bg-primary/10 active:scale-95"
           >
             <span className="material-symbols-outlined">arrow_back</span>
           </button>
         ) : (
-          <div className="w-10" />
+          <div className="h-10 w-10" aria-hidden="true" />
         )}
-        <h2 className="text-on-surface text-lg font-bold leading-tight tracking-tight">
+        <h1 className="text-base font-bold tracking-tight text-on-surface">
           {isRequestsTab ? "정산 요청 관리" : isCategoryReportTab ? "지출 리포트" : "정산"}
-        </h2>
+        </h1>
         {isSubPage ? (
-          <div className="w-10" />
+          <div className="h-10 w-10" aria-hidden="true" />
         ) : (
           <button
             type="button"

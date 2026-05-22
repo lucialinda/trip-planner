@@ -469,10 +469,10 @@ function HomeContent() {
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       {/* Header */}
-      <header className="flex items-center bg-white/80 backdrop-blur-md p-4 justify-between border-b border-outline-variant/30 sticky top-0 z-40">
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-sky-100 bg-white/80 px-2 backdrop-blur-md">
         {/* 좌측 더미 스페이서 — 우측 프로필 버튼과 폭을 맞춰 타이틀을 정확히 가운데에 배치 */}
         <div className="h-10 w-10" aria-hidden="true" />
-        <h2 className="text-on-surface text-lg font-bold leading-tight tracking-tight">내 여행</h2>
+        <h1 className="text-base font-bold tracking-tight text-on-surface">내 여행</h1>
         <button
           onClick={() => setProfileOpen(true)}
           className="flex h-10 w-10 items-center justify-center rounded-full glass-card text-primary overflow-hidden"

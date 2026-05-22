@@ -5,23 +5,8 @@ import { useEffect, useState, Suspense } from "react";
 import { doc, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  ChevronLeft,
-  Share2,
-  Link as LinkIcon,
-  Copy,
-  Share,
-  Users,
-} from "lucide-react";
+import { ChevronLeft } from "lucide-react";
 import { toast } from "sonner";
-import { MembersDialog } from "@/components/MembersDialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { ItineraryTab } from "@/components/ItineraryTab";
 import { BottomNav } from "@/components/BottomNav";
 import { ProfileDialog } from "@/components/ProfileDialog";
@@ -61,7 +46,6 @@ function TripContent() {
 
   const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showMembers, setShowMembers] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
 
   useEffect(() => {
@@ -84,41 +68,6 @@ function TripContent() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId, user, router]);
 
-  const handleCopyLink = async () => {
-    const code = trip?.code || "";
-    const joinUrl = `${window.location.origin}/?joinCode=${code}`;
-    try {
-      await navigator.clipboard.writeText(joinUrl);
-      toast.success("초대 링크가 복사되었습니다!");
-    } catch {
-      toast.error("링크 복사에 실패했습니다.");
-    }
-  };
-
-  const handleCopyCode = async () => {
-    const code = trip?.code || "";
-    try {
-      await navigator.clipboard.writeText(code);
-      toast.success(`참가 코드(${code})가 복사되었습니다!`);
-    } catch {
-      toast.error("코드 복사에 실패했습니다.");
-    }
-  };
-
-  const handleNativeShare = async () => {
-    if (!trip) return;
-    const code = trip.code || "";
-    const joinUrl = `${window.location.origin}/?joinCode=${code}`;
-    try {
-      await navigator.share({
-        title: trip.name,
-        text: `여행 플래너에 초대합니다!\n초대 링크: ${joinUrl}`,
-      });
-    } catch {
-      // ignore
-    }
-  };
-
   if (loading)
     return (
       <div className="min-h-screen flex items-center justify-center text-muted-foreground text-sm">
@@ -127,49 +76,16 @@ function TripContent() {
     );
   if (!trip) return null;
 
-  const memberCount = Object.keys(trip.members || {}).length;
   const dLabel = dDayLabel(trip.startDate, trip.endDate);
   const profilePhoto = user?.photoURL || null;
-
-  const shareMenu = (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label="공유"
-        className="flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
-      >
-        <Share2 className="h-4 w-4" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={handleCopyLink}>
-          <LinkIcon className="mr-2 h-4 w-4" />
-          <span>초대 링크 복사</span>
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={handleCopyCode}>
-          <Copy className="mr-2 h-4 w-4" />
-          <span>참가 코드 복사 (6자리)</span>
-        </DropdownMenuItem>
-        {typeof navigator !== "undefined" && !!navigator.share && (
-          <DropdownMenuItem onClick={handleNativeShare}>
-            <Share className="mr-2 h-4 w-4" />
-            <span>다른 앱으로 공유</span>
-          </DropdownMenuItem>
-        )}
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => setShowMembers(true)}>
-          <Users className="mr-2 h-4 w-4" />
-          <span>멤버 보기 ({memberCount}명)</span>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  );
 
   return (
     <div className="relative min-h-screen w-full max-w-3xl mx-auto bg-slate-50 pb-24 shadow-sm sm:border-x">
       {/* TopAppBar */}
-      <header className="h-14 bg-white/80 backdrop-blur-md border-b border-sky-100 flex items-center justify-between px-2 sticky top-0 z-30">
-        <div className="w-10" />
-        <h1 className="text-base font-bold text-on-surface tracking-tight">
-          내 일정
+      <header className="sticky top-0 z-40 flex h-14 items-center justify-between border-b border-sky-100 bg-white/80 px-2 backdrop-blur-md">
+        <div className="h-10 w-10" aria-hidden="true" />
+        <h1 className="text-base font-bold tracking-tight text-on-surface">
+          일정
         </h1>
         <button
           type="button"
@@ -214,10 +130,6 @@ function TripContent() {
             }`}
           />
 
-          <div className="absolute right-3 top-3 z-10">
-            {shareMenu}
-          </div>
-
           {/* 하단 텍스트 */}
           <div className="absolute bottom-4 left-4 right-4">
             <div className="min-w-0">
@@ -242,7 +154,6 @@ function TripContent() {
         <ItineraryTab tripId={tripId as string} trip={trip} />
       </div>
 
-      <MembersDialog open={showMembers} onOpenChange={setShowMembers} trip={trip} />
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
 
       {/* 하단 네비게이션 */}
