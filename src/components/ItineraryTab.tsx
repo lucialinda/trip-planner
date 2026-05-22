@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Linkify from "linkify-react";
-import { Copy, Edit2, MapPin, Trash2 } from "lucide-react";
+import { Edit2, MapPin, MoreHorizontal, Trash2 } from "lucide-react";
 
 interface Place {
   id: string;
@@ -623,8 +623,29 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
   };
 
   const handleCopyNote = async (note: string) => {
+    const copyWithFallback = () => {
+      const textarea = document.createElement("textarea");
+      textarea.value = note;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.top = "-9999px";
+      textarea.style.left = "-9999px";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      textarea.setSelectionRange(0, textarea.value.length);
+      const copied = document.execCommand("copy");
+      document.body.removeChild(textarea);
+      return copied;
+    };
+
     try {
-      await navigator.clipboard.writeText(note);
+      if (!copyWithFallback()) {
+        if (!navigator.clipboard?.writeText) {
+          throw new Error("copy fallback failed");
+        }
+        await navigator.clipboard.writeText(note);
+      }
       toast.success("메모가 복사되었습니다.");
     } catch {
       toast.error("메모 복사에 실패했습니다.");
@@ -725,7 +746,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                   <div
                     className={`${
                       highlight ? "glass-elevated" : "glass-panel"
-                    } p-4 rounded-xl flex items-start gap-3`}
+                    } relative p-4 rounded-xl flex items-start gap-3`}
                   >
                     {/* 날짜 배지 */}
                     <div
@@ -769,7 +790,23 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                         </a>
                       )}
                       {place.note && (
-                        <div className="mt-1.5 flex items-start gap-1 text-[13px] leading-5 text-on-surface-variant">
+                        <div
+                          role="button"
+                          tabIndex={0}
+                          aria-label="메모 복사"
+                          title="메모 복사"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleCopyNote(place.note || "");
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key !== "Enter" && e.key !== " ") return;
+                            e.preventDefault();
+                            e.stopPropagation();
+                            handleCopyNote(place.note || "");
+                          }}
+                          className="mt-1.5 flex max-w-full items-start gap-1 text-left text-[13px] leading-5 text-on-surface-variant transition-colors hover:text-primary"
+                        >
                           <MemoIcon className="mt-1 h-3 w-3 shrink-0" />
                           <span className="min-w-0 max-w-[16rem] truncate">
                             <Linkify
@@ -777,42 +814,33 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
                                 target: "_blank",
                                 rel: "noopener noreferrer",
                                 className: "text-primary hover:underline",
+                                attributes: {
+                                  onClick: (e: React.MouseEvent<HTMLAnchorElement>) => {
+                                    e.stopPropagation();
+                                  },
+                                },
                               }}
                             >
                               {place.note}
                             </Linkify>
                           </span>
-                          <button
-                            type="button"
-                            aria-label="메모 복사"
-                            title="메모 복사"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleCopyNote(place.note || "");
-                            }}
-                            className="-mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-slate-100 hover:text-primary"
-                          >
-                            <Copy className="h-3.5 w-3.5" />
-                          </button>
                         </div>
                       )}
                     </div>
 
-                    {/* more_vert (여행 멤버만) */}
+                    {/* 액션 메뉴 (여행 멤버만) */}
                     {canManage && (
                       <button
                         type="button"
-                        aria-label="수정/삭제 메뉴"
+                        aria-label="일정 관리 메뉴"
                         onClick={(e) => {
                           e.stopPropagation();
                           closeAllSwipes(place.id);
                           swipeRefs.current.get(place.id)?.toggle();
                         }}
-                        className="shrink-0 p-1 -mr-1 text-on-surface-variant hover:text-primary transition-colors rounded-full"
+                        className="absolute right-1.5 top-1 flex h-8 w-8 items-center justify-center rounded-full border-0 bg-transparent text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
                       >
-                        <span className="material-symbols-outlined text-[20px]">
-                          more_vert
-                        </span>
+                        <MoreHorizontal className="h-4 w-4" strokeWidth={2} />
                       </button>
                     )}
                   </div>
