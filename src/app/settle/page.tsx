@@ -186,6 +186,15 @@ const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
   shopping: "🛍️",
   etc: "📦",
 };
+const CATEGORY_REPORT_BAR_CLASS: Record<ExpenseCategory, string> = {
+  food: "bg-primary",
+  cafe: "bg-amber-500",
+  transit: "bg-slate-500",
+  lodging: "bg-tertiary",
+  activity: "bg-rose-500",
+  shopping: "bg-emerald-500",
+  etc: "bg-on-surface-variant",
+};
 
 type CategoryReportRow = {
   category: ExpenseCategory;
@@ -2100,11 +2109,11 @@ function CategoryExpenseReport({
   total: number;
 }) {
   const [expandedCategory, setExpandedCategory] = useState<ExpenseCategory | null>(null);
-  const rows: CategoryReportRow[] = CATEGORY_ORDER.map((category, index) => {
+  const rows: CategoryReportRow[] = CATEGORY_ORDER.map((category) => {
     const items = expenses
       .filter((expense) => expense.category === category)
       .sort((a, b) => effectiveKrw(b) - effectiveKrw(a));
-    const amount = byCategory[category];
+    const amount = byCategory[category] ?? 0;
     const percent = total > 0 ? Math.round((amount / total) * 100) : 0;
     return {
       category,
@@ -2112,19 +2121,10 @@ function CategoryExpenseReport({
       items,
       amount,
       percent,
-      barClass: [
-        "bg-primary",
-        "bg-amber-500",
-        "bg-slate-500",
-        "bg-tertiary",
-        "bg-rose-500",
-        "bg-emerald-500",
-        "bg-on-surface-variant",
-      ][index],
+      barClass: CATEGORY_REPORT_BAR_CLASS[category],
     };
   });
   rows.sort((a, b) => b.amount - a.amount);
-  const visibleRows = rows.filter((row) => row.amount > 0);
 
   if (total <= 0) {
     return (
@@ -2170,10 +2170,15 @@ function CategoryExpenseReport({
                   <div className="mb-2 flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2">
                       <span
-                        className={`material-symbols-outlined flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border text-[18px] ${row.meta.iconBoxClass}`}
-                        style={{ fontVariationSettings: "'FILL' 1" }}
+                        className={`inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border ${row.meta.iconBoxClass}`}
+                        aria-hidden="true"
                       >
-                        {row.meta.icon}
+                        <span
+                          className="material-symbols-outlined block text-[18px] leading-none"
+                          style={{ fontVariationSettings: "'FILL' 1" }}
+                        >
+                          {row.meta.icon}
+                        </span>
                       </span>
                       <div className="min-w-0">
                         <p className="truncate text-sm font-semibold text-on-surface">{row.meta.label}</p>
