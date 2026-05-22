@@ -180,11 +180,7 @@ function TripContent() {
               alt={trip.name || "여행 대표 사진"}
               className="absolute inset-0 w-full h-full object-cover"
             />
-          ) : (
-            <span className="material-symbols-outlined absolute top-3 right-3 text-white/60 text-3xl">
-              flight_takeoff
-            </span>
-          )}
+          ) : null}
           {/* 텍스트 가독용 어두운 그라디언트 */}
           <div
             className={`absolute inset-0 ${

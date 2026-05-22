@@ -172,17 +172,51 @@ function HomeContent() {
     })();
   }, [user, profileOpen]);
 
-  // Auto-open join dialog if URL contains joinCode
+  // Auto-open join dialog if URL contains joinCode.
+  // If the user is already a member, skip the dialog and clean up the join URL.
   useEffect(() => {
-    if (user && urlJoinCode) {
-      const key = `attemptedJoin_${urlJoinCode}`;
-      if (!sessionStorage.getItem(key)) {
-        sessionStorage.setItem(key, "true");
-        setCreateDefaultMode("join");
-        setCreateOpen(true);
+    if (!user || !urlJoinCode) return;
+
+    const joinCode = urlJoinCode.trim().toUpperCase();
+    if (!joinCode) return;
+
+    let cancelled = false;
+    const key = `attemptedJoin_${joinCode}`;
+
+    (async () => {
+      try {
+        const codeSnap = await getDoc(doc(db, "tripCodes", joinCode));
+        if (cancelled) return;
+
+        if (codeSnap.exists()) {
+          const tripId = codeSnap.data().tripId as string | undefined;
+          if (tripId) {
+            const tripSnap = await getDoc(doc(db, "trips", tripId));
+            if (cancelled) return;
+
+            const memberUids = tripSnap.exists() && Array.isArray(tripSnap.data().memberUids)
+              ? tripSnap.data().memberUids
+              : [];
+            if (memberUids.includes(user.uid)) {
+              router.replace(`/trip?id=${tripId}`);
+              return;
+            }
+          }
+        }
+      } catch (error) {
+        console.error("[home] joinCode preflight failed:", error);
       }
-    }
-  }, [user, urlJoinCode]);
+
+      if (cancelled || sessionStorage.getItem(key)) return;
+      sessionStorage.setItem(key, "true");
+      setCreateDefaultMode("join");
+      setCreateOpen(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user, urlJoinCode, router]);
 
   const handleTripCardKeyDown = (e: React.KeyboardEvent<HTMLDivElement>, tripId: string) => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -427,11 +461,7 @@ function HomeContent() {
                         alt={t.name || "여행 대표 사진"}
                         className="absolute inset-0 w-full h-full object-cover"
                       />
-                    ) : (
-                      <span className="material-symbols-outlined absolute top-3 right-3 text-white/60 text-3xl">
-                        flight_takeoff
-                      </span>
-                    )}
+                    ) : null}
                     {/* 텍스트 가독용 어두운 그라디언트 */}
                     <div
                       className={`absolute inset-0 ${

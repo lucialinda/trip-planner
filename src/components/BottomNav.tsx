@@ -117,7 +117,7 @@ function BottomNavFallback() {
 export function BottomNav() {
   return (
     <nav
-      className="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 py-3 bg-white/90 backdrop-blur-xl border-t border-sky-100 rounded-t-2xl"
+      className="fixed bottom-0 left-1/2 z-50 flex w-full max-w-3xl -translate-x-1/2 items-center justify-around rounded-t-2xl border-t border-sky-100 bg-white/90 px-4 py-3 backdrop-blur-xl sm:border-x"
       style={{ boxShadow: "0 -4px 12px rgba(0,0,0,0.05)" }}
     >
       <Suspense fallback={<BottomNavFallback />}>

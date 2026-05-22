@@ -9,7 +9,8 @@ service cloud.firestore {
       return signedIn()
         // Keep this list in sync with src/lib/admin.ts.
         && request.auth.uid in [
-          "xdiqN6R92NbFXjf2zB8y0xdTB0Ky"
+          "xdiqN6R92NbFXjf2zB8y0xdTB0Ky",
+          "PTKwn2IQngeI1PFhuwx2t6Uv5iu2"
         ];
     }
 

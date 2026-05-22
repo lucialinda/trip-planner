@@ -18,6 +18,7 @@ import {
   serverTimestamp,
   setDoc,
   updateDoc,
+  arrayUnion,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useAuth } from "@/contexts/AuthContext";
@@ -136,25 +137,14 @@ export function CreateTripDialog({
       }
       const tripId = codeSnap.data().tripId;
       const tripRef = doc(db, "trips", tripId);
-      const tripSnap = await getDoc(tripRef);
-      if (!tripSnap.exists()) {
-        toast.error("여행을 찾을 수 없습니다.");
-        return;
-      }
-      const tripData = tripSnap.data();
-      const memberUids = Array.isArray(tripData.memberUids) ? tripData.memberUids : [];
-      const members = tripData.members && typeof tripData.members === "object" ? tripData.members : {};
       await updateDoc(tripRef, {
-        members: {
-          ...members,
-          [user.uid]: user.displayName || "익명",
-        },
-        memberUids: memberUids.includes(user.uid) ? memberUids : [...memberUids, user.uid],
+        [`members.${user.uid}`]: user.displayName || "익명",
+        memberUids: arrayUnion(user.uid),
       });
 
       toast.success("여행에 참가했어요!");
       onOpenChange(false);
-      router.push(`/trip?id=${tripId}`);
+      router.replace(`/trip?id=${tripId}`);
     } catch {
       toast.error("참가 실패");
     } finally {

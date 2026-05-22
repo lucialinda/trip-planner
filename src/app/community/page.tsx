@@ -4,7 +4,7 @@ import { BottomNav } from "@/components/BottomNav";
 
 export default function CommunityPage() {
   return (
-    <div className="relative flex min-h-screen w-full flex-col bg-background overflow-x-hidden">
+    <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
       <header className="sticky top-0 z-40 flex items-center justify-center bg-white/80 backdrop-blur-md p-4 border-b border-outline-variant/30">
         <h2 className="text-on-surface text-lg font-bold leading-tight tracking-tight">스레드</h2>
       </header>
