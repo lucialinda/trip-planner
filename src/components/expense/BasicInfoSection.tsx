@@ -3,6 +3,13 @@
 import { useState } from "react";
 import { CalendarClock } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { CATEGORY_META, type ExpenseCategory } from "@/lib/expenses";
 
 interface Props {
@@ -50,8 +57,22 @@ export function BasicInfoSection({
   onPaidTimeChange,
 }: Props) {
   const [dateTimePickerOpen, setDateTimePickerOpen] = useState(false);
+  const [draftDate, setDraftDate] = useState("");
+  const [draftTime, setDraftTime] = useState("");
   const memberUids = Object.keys(members);
   const paidDateTimeLabel = formatPaidDateTime(paidDateLocal, paidTimeLocal);
+
+  const openDateTimePicker = () => {
+    setDraftDate(paidDateLocal);
+    setDraftTime(paidTimeLocal || "00:00");
+    setDateTimePickerOpen(true);
+  };
+
+  const applyDateTimePicker = () => {
+    onPaidDateChange(draftDate);
+    onPaidTimeChange(draftTime);
+    setDateTimePickerOpen(false);
+  };
 
   return (
     <section className="border-b border-outline-variant py-5">
@@ -126,9 +147,8 @@ export function BasicInfoSection({
         <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">결제일</label>
         <button
           type="button"
-          onClick={() => setDateTimePickerOpen((open) => !open)}
-          aria-expanded={dateTimePickerOpen}
-          className="flex h-12 w-full items-center gap-3 rounded-xl border border-outline-variant bg-white px-3 text-left transition-colors hover:border-primary/40"
+          onClick={openDateTimePicker}
+          className="flex h-14 w-full items-center gap-3 overflow-hidden rounded-2xl border border-outline-variant bg-white px-4 text-left transition-colors hover:border-primary/40"
         >
           <CalendarClock className="h-4 w-4 shrink-0 text-primary" />
           <div className="min-w-0 flex-1">
@@ -136,27 +156,58 @@ export function BasicInfoSection({
           </div>
           <span className="shrink-0 text-[11px] font-semibold text-primary">변경</span>
         </button>
-        {dateTimePickerOpen && (
-          <div className="mt-2 grid grid-cols-[minmax(0,1.3fr)_minmax(0,0.9fr)] gap-2 rounded-xl bg-surface-variant/30 p-2">
-            <Input
-              type="date"
-              value={paidDateLocal}
-              required
-              aria-label="결제일"
-              onInput={(e) => onPaidDateChange(e.currentTarget.value)}
-              onChange={(e) => onPaidDateChange(e.target.value)}
-              className="h-10 min-w-0 rounded-lg border-outline-variant bg-white px-2 text-sm"
-            />
-            <Input
-              type="time"
-              value={paidTimeLocal}
-              aria-label="결제 시간"
-              onInput={(e) => onPaidTimeChange(e.currentTarget.value)}
-              onChange={(e) => onPaidTimeChange(e.target.value)}
-              className="h-10 min-w-0 rounded-lg border-outline-variant bg-white px-2 text-sm"
-            />
-          </div>
-        )}
+        <Dialog open={dateTimePickerOpen} onOpenChange={setDateTimePickerOpen}>
+          <DialogContent
+            showCloseButton={false}
+            className="!fixed !inset-x-0 !bottom-0 !top-auto !left-0 !w-full !max-w-none !translate-x-0 !translate-y-0 !gap-0 rounded-t-2xl rounded-b-none bg-white !p-0 sm:!left-1/2 sm:!top-1/2 sm:!bottom-auto sm:!max-w-sm sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-2xl"
+          >
+            <DialogHeader className="border-b border-outline-variant px-5 py-4">
+              <DialogTitle className="text-base font-bold">결제일시 변경</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 px-5 py-5">
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">결제일</label>
+                <Input
+                  type="date"
+                  value={draftDate}
+                  required
+                  aria-label="결제일 선택"
+                  onInput={(e) => setDraftDate(e.currentTarget.value)}
+                  onChange={(e) => setDraftDate(e.target.value)}
+                  className="h-11 rounded-xl border-outline-variant bg-white px-3 text-sm"
+                />
+              </div>
+              <div>
+                <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">결제 시간</label>
+                <Input
+                  type="time"
+                  value={draftTime}
+                  aria-label="결제 시간 선택"
+                  onInput={(e) => setDraftTime(e.currentTarget.value)}
+                  onChange={(e) => setDraftTime(e.target.value)}
+                  className="h-11 rounded-xl border-outline-variant bg-white px-3 text-sm"
+                />
+              </div>
+            </div>
+            <div className="flex gap-2 border-t border-outline-variant px-5 pb-[calc(16px+env(safe-area-inset-bottom))] pt-3">
+              <Button
+                type="button"
+                variant="outline"
+                className="h-11 flex-1 rounded-xl text-sm font-semibold"
+                onClick={() => setDateTimePickerOpen(false)}
+              >
+                취소
+              </Button>
+              <Button
+                type="button"
+                className="h-11 flex-1 rounded-xl text-sm font-semibold"
+                onClick={applyDateTimePicker}
+              >
+                적용
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </section>
   );

@@ -427,7 +427,7 @@ export function AddExpenseDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="!fixed !inset-0 !left-0 !top-0 !flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none !translate-x-0 !translate-y-0 !flex-col !gap-0 overflow-hidden rounded-none border-0 bg-white !p-0 sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[92vh] sm:!w-full sm:!max-w-md sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-2xl sm:border"
+        className="!fixed !inset-0 !left-0 !top-0 !flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none !translate-x-0 !translate-y-0 !flex-col !gap-0 overflow-hidden rounded-none border-0 bg-white !p-0 sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[92vh] sm:!w-full sm:!max-w-lg sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-2xl sm:border md:!max-w-xl"
       >
         {/* 헤더 */}
         <div className="shrink-0 border-b border-outline-variant bg-white/95 px-5 pb-4 pt-[calc(18px+env(safe-area-inset-top))] backdrop-blur-sm sm:rounded-t-2xl sm:pt-5">

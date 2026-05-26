@@ -574,6 +574,7 @@ function SettleContent() {
   const [memberPhotos, setMemberPhotos] = useState<Record<string, string | null>>({});
   const [memberSettlementSettings, setMemberSettlementSettings] = useState<Record<string, SettlementSettings>>({});
   const swipeRefs = useRef<Map<string, SwipeableItemHandle | null>>(new Map());
+  const expenseDialogHistoryRef = useRef(false);
 
   // 비로그인 / id 누락 → 홈으로
   useEffect(() => {
@@ -713,6 +714,46 @@ function SettleContent() {
       cancelled = true;
     };
   }, [user, profileOpen]);
+
+  const closeExpenseDialog = () => {
+    if (expenseDialogHistoryRef.current && typeof window !== "undefined") {
+      window.history.back();
+      return;
+    }
+    setAddOpen(false);
+    setEditingExpense(null);
+  };
+
+  useEffect(() => {
+    const expenseDialogOpen = addOpen || !!editingExpense;
+    if (!expenseDialogOpen || expenseDialogHistoryRef.current || typeof window === "undefined") {
+      return;
+    }
+
+    window.history.pushState(
+      {
+        ...(window.history.state ?? {}),
+        settleExpenseDialog: true,
+      },
+      "",
+      window.location.href,
+    );
+    expenseDialogHistoryRef.current = true;
+  }, [addOpen, editingExpense]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handlePopState = () => {
+      if (!expenseDialogHistoryRef.current) return;
+      expenseDialogHistoryRef.current = false;
+      setAddOpen(false);
+      setEditingExpense(null);
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, []);
 
   // 집계
   const memberCount = useMemo(
@@ -1427,7 +1468,13 @@ function SettleContent() {
       {trip && tripId && (
         <AddExpenseDialog
           open={addOpen}
-          onOpenChange={setAddOpen}
+          onOpenChange={(open) => {
+            if (open) {
+              setAddOpen(true);
+              return;
+            }
+            closeExpenseDialog();
+          }}
           tripId={tripId}
           members={trip.members ?? EMPTY_MEMBERS}
         />
@@ -1437,7 +1484,7 @@ function SettleContent() {
         <AddExpenseDialog
           open={!!editingExpense}
           onOpenChange={(open) => {
-            if (!open) setEditingExpense(null);
+            if (!open) closeExpenseDialog();
           }}
           tripId={tripId}
           members={trip.members ?? EMPTY_MEMBERS}
