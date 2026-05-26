@@ -1,5 +1,7 @@
 "use client";
 
+import { Check } from "lucide-react";
+
 interface Props {
   memberUids: string[];
   members: Record<string, string>;
@@ -24,7 +26,7 @@ export function ParticipantsSection({
   const checkedCount = Object.keys(participants).length;
 
   return (
-    <div className="rounded-2xl border border-outline-variant bg-white/60 px-4 py-4 space-y-3">
+    <section className="py-5">
       {/* 헤더 */}
       <div className="flex items-center justify-between">
         <div>
@@ -32,21 +34,21 @@ export function ParticipantsSection({
             정산 인원
           </p>
           <p className="text-[10px] text-on-surface-variant/70 mt-0.5">
-            {checkedCount}명 선택됨
+            {checkedCount}명에게 나누어 계산돼요
           </p>
         </div>
         <div className="flex gap-1">
           <button
             type="button"
             onClick={onSelectAll}
-            className="text-[11px] font-semibold text-primary bg-primary/10 px-3 py-1.5 rounded-full hover:bg-primary/20 transition-colors"
+            className="rounded-full bg-primary/10 px-3 py-1.5 text-[11px] font-semibold text-primary transition-colors hover:bg-primary/20"
           >
             전체
           </button>
           <button
             type="button"
             onClick={onSelectOnlyPayer}
-            className="text-[11px] font-semibold text-on-surface-variant bg-white/60 border border-outline-variant px-3 py-1.5 rounded-full hover:border-primary/40 hover:text-primary transition-colors"
+            className="rounded-full border border-outline-variant bg-white px-3 py-1.5 text-[11px] font-semibold text-on-surface-variant transition-colors hover:border-primary/40 hover:text-primary"
           >
             결제자만
           </button>
@@ -54,7 +56,7 @@ export function ParticipantsSection({
       </div>
 
       {/* 멤버 목록 */}
-      <div className="space-y-2">
+      <div className="mt-4 divide-y divide-outline-variant">
         {memberUids.map((uid) => {
           const checked = !!participants[uid] || uid === paidByUid;
           const locked = uid === paidByUid;
@@ -69,13 +71,9 @@ export function ParticipantsSection({
               disabled={locked}
               onClick={() => onToggle(uid)}
               className={`
-                w-full flex items-center gap-3 rounded-xl border px-3 py-3 transition-all text-left
+                flex w-full items-center gap-3 py-3 text-left transition-all
                 active:scale-[0.98]
-                ${
-                  checked
-                    ? "border-primary/40 bg-primary/5"
-                    : "border-outline-variant bg-white/50 hover:border-primary/30 hover:bg-primary/5"
-                }
+                ${checked ? "text-on-surface" : "text-on-surface-variant"}
                 ${locked ? "cursor-default" : "cursor-pointer"}
               `}
             >
@@ -83,7 +81,7 @@ export function ParticipantsSection({
               <div
                 className={`
                   flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold
-                  ${checked ? "bg-primary/20 text-primary" : "bg-outline-variant/30 text-on-surface-variant"}
+                  ${checked ? "bg-primary/10 text-primary" : "bg-surface-variant text-on-surface-variant"}
                 `}
               >
                 {initial}
@@ -101,7 +99,7 @@ export function ParticipantsSection({
 
               {/* 결제자 badge */}
               {locked && (
-                <span className="shrink-0 text-[10px] font-bold text-primary bg-primary/10 border border-primary/20 px-2 py-0.5 rounded-full">
+                <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-bold text-primary">
                   결제자
                 </span>
               )}
@@ -110,7 +108,7 @@ export function ParticipantsSection({
               {!locked && (
                 <div
                   className={`
-                    shrink-0 flex h-5 w-5 items-center justify-center rounded-full border-2 transition-all
+                    flex h-5 w-5 shrink-0 items-center justify-center rounded-full border transition-all
                     ${
                       checked
                         ? "border-primary bg-primary"
@@ -119,19 +117,7 @@ export function ParticipantsSection({
                   `}
                 >
                   {checked && (
-                    <svg
-                      className="w-3 h-3 text-white"
-                      viewBox="0 0 12 12"
-                      fill="none"
-                    >
-                      <path
-                        d="M2.5 6l2.5 2.5 4.5-5"
-                        stroke="currentColor"
-                        strokeWidth="1.5"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    </svg>
+                    <Check className="h-3 w-3 text-white" />
                   )}
                 </div>
               )}
@@ -139,6 +125,6 @@ export function ParticipantsSection({
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }

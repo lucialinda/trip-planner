@@ -75,60 +75,61 @@ export function PaymentAmountSection({
       : null;
 
   return (
-    <div className="rounded-2xl border border-outline-variant bg-white/60 px-4 py-4 space-y-4">
+    <section className="border-b border-outline-variant py-5">
       <p className="text-[11px] font-semibold tracking-widest text-on-surface-variant uppercase">
         결제 금액
       </p>
 
-      {/* 통화 배지 + 금액 입력 — 한 줄 */}
-      <div className="flex items-center gap-2">
-        {/* 통화 코드 배지 */}
-        <div className="flex items-center gap-1 shrink-0">
-          {visibleCurrencies.map((c) => {
-            const active = paymentCurrency === c.code;
-            return (
-              <button
-                key={c.code}
-                type="button"
-                onClick={() => onCurrencyChange(c.code)}
-                aria-pressed={active}
-                title={c.label}
-                className={[
-                  "flex items-center justify-center rounded-full border px-3 h-9",
-                  "text-xs font-bold transition-all shrink-0",
-                  active
-                    ? "border-primary bg-primary text-white shadow-sm"
-                    : "border-outline-variant bg-white/70 text-on-surface hover:border-primary/50 hover:bg-primary/5",
-                ].join(" ")}
-              >
-                {c.code}
-              </button>
-            );
-          })}
+      <div className="mt-4 grid grid-cols-[minmax(0,auto)_minmax(0,1fr)] items-end gap-3">
+        <div className="min-w-0">
+          <label className="mb-2 block text-xs font-medium text-on-surface-variant">통화</label>
+          <div className="inline-flex rounded-full bg-surface-variant/60 p-1">
+            {visibleCurrencies.map((c) => {
+              const active = paymentCurrency === c.code;
+              return (
+                <button
+                  key={c.code}
+                  type="button"
+                  onClick={() => onCurrencyChange(c.code)}
+                  aria-pressed={active}
+                  title={c.label}
+                  className={[
+                    "flex h-8 min-w-12 items-center justify-center rounded-full px-2.5 text-xs font-bold transition-all",
+                    active
+                      ? "bg-white text-primary shadow-sm"
+                      : "text-on-surface-variant hover:text-primary",
+                  ].join(" ")}
+                >
+                  {c.code}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {/* 금액 입력 — 앞에 통화 기호 prefix */}
-        <div className="relative flex-1 min-w-0">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm font-semibold text-on-surface-variant/60 select-none pointer-events-none">
-            {meta.symbol}
-          </span>
-          <input
-            type="text"
-            inputMode={allowDecimal ? "decimal" : "numeric"}
-            value={display}
-            onChange={handleChange}
-            placeholder="0"
-            className="w-full h-10 rounded-md border border-input bg-white/80 pl-7 pr-3 py-2 text-base font-semibold text-on-surface placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          />
+        <div className="min-w-0">
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 select-none text-sm font-semibold text-on-surface-variant/60 pointer-events-none">
+              {meta.symbol}
+            </span>
+            <input
+              type="text"
+              inputMode={allowDecimal ? "decimal" : "numeric"}
+              value={display}
+              onChange={handleChange}
+              placeholder="0"
+              className="h-10 w-full rounded-full border border-outline-variant bg-white pl-8 pr-3 text-sm font-bold text-on-surface placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
+            />
+          </div>
         </div>
       </div>
 
       {/* 원화 환산 summary card (외화만) */}
       {!isKrw && (
-        <div className="rounded-xl bg-surface-variant/40 border border-outline-variant px-4 py-3 space-y-1.5">
-          <div className="flex items-center justify-between text-xs text-on-surface-variant">
+        <div className="mt-4 space-y-2 rounded-xl bg-surface-variant/30 px-3 py-3">
+          <div className="flex items-center justify-between gap-4 text-xs text-on-surface-variant">
             <span>적용 환율</span>
-            <span className="font-medium">
+            <span className="text-right font-medium">
               {rateLoading ? (
                 <span className="inline-flex items-center gap-1">
                   <Loader2 className="w-3 h-3 animate-spin" />
@@ -144,9 +145,9 @@ export function PaymentAmountSection({
             </span>
           </div>
 
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between gap-4">
             <span className="text-xs text-on-surface-variant">원화 환산 금액</span>
-            <span className="text-base font-bold text-on-surface">
+            <span className="text-right text-base font-bold text-on-surface">
               {estimatedKrw !== null
                 ? "₩" + estimatedKrw.toLocaleString("ko-KR")
                 : "—"}
@@ -158,6 +159,6 @@ export function PaymentAmountSection({
           </p>
         </div>
       )}
-    </div>
+    </section>
   );
 }

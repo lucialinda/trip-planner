@@ -23,7 +23,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import {
-  CATEGORY_META,
   type Expense,
   type ExpenseCategory,
   type ExchangeRateStatus,
@@ -418,23 +417,30 @@ export function AddExpenseDialog({
   const isKrw = paymentCurrency === "KRW";
   const foreignAmountNum = parseFloat(amountInput);
 
+  const dialogTitle = isEditMode ? "지출 수정" : "지출 추가";
+  const dialogDescription = isEditMode
+    ? "결제 정보를 수정하면 정산 금액이 자동 계산돼요."
+    : "결제한 항목을 기록하면 자동으로 1/n 정산이 계산돼요.";
+  const submitLabel = isEditMode ? "수정 완료" : "저장하기";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md sm:max-w-md max-h-[92vh] overflow-y-auto rounded-2xl p-0">
+      <DialogContent
+        showCloseButton={false}
+        className="!fixed !inset-0 !left-0 !top-0 !flex !h-[100dvh] !max-h-[100dvh] !w-screen !max-w-none !translate-x-0 !translate-y-0 !flex-col !gap-0 overflow-hidden rounded-none border-0 bg-white !p-0 sm:!left-1/2 sm:!top-1/2 sm:!h-auto sm:!max-h-[92vh] sm:!w-full sm:!max-w-md sm:!-translate-x-1/2 sm:!-translate-y-1/2 sm:rounded-2xl sm:border"
+      >
         {/* 헤더 */}
-        <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-sm border-b border-outline-variant px-5 pt-5 pb-4 rounded-t-2xl">
+        <div className="shrink-0 border-b border-outline-variant bg-white/95 px-5 pb-4 pt-[calc(18px+env(safe-area-inset-top))] backdrop-blur-sm sm:rounded-t-2xl sm:pt-5">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold">
-              {isEditMode ? "지출 수정" : "지출 추가"}
-            </DialogTitle>
+            <DialogTitle className="text-lg font-bold">{dialogTitle}</DialogTitle>
             <DialogDescription className="text-xs text-on-surface-variant">
-              결제한 항목을 기록하면 자동으로 1/n 정산이 계산돼요.
+              {dialogDescription}
             </DialogDescription>
           </DialogHeader>
         </div>
 
         {/* 본문 */}
-        <div className="px-4 py-4 space-y-3">
+        <div className="flex-1 overflow-y-auto px-5 pb-[calc(104px+env(safe-area-inset-bottom))] pt-2">
           {/* 1. 기본 정보 */}
           <BasicInfoSection
             category={category}
@@ -467,7 +473,6 @@ export function AddExpenseDialog({
           {/* 3. 환율 확정 상태 (외화만) */}
           {!isKrw && (
             <FxStatusSection
-              paymentCurrency={paymentCurrency}
               foreignAmount={
                 Number.isFinite(foreignAmountNum) ? foreignAmountNum : 0
               }
@@ -493,22 +498,22 @@ export function AddExpenseDialog({
         </div>
 
         {/* footer */}
-        <div className="sticky bottom-0 bg-white/95 backdrop-blur-sm border-t border-outline-variant px-4 py-4 flex gap-2 rounded-b-2xl">
+        <div className="sticky bottom-0 z-20 flex shrink-0 gap-2 border-t border-outline-variant bg-white/95 px-5 pb-[calc(16px+env(safe-area-inset-bottom))] pt-3 shadow-[0_-10px_24px_rgba(15,23,42,0.06)] backdrop-blur-sm sm:rounded-b-2xl">
           <Button
             variant="outline"
-            className="h-11 flex-1 rounded-xl text-sm font-semibold"
+            className="h-12 flex-1 rounded-xl text-sm font-semibold"
             onClick={() => onOpenChange(false)}
             disabled={saving}
           >
             취소
           </Button>
           <Button
-            className="h-11 flex-1 rounded-xl text-sm font-semibold shadow-sm"
+            className="h-12 flex-1 rounded-xl text-sm font-semibold shadow-sm"
             onClick={handleSave}
             disabled={saving}
           >
             {saving && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {isEditMode ? "수정 완료" : "저장하기"}
+            {submitLabel}
           </Button>
         </div>
       </DialogContent>

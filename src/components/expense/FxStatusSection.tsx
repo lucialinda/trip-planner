@@ -6,7 +6,6 @@ import type { ExchangeRateStatus } from "@/lib/expenses";
 import { calcKrwAmount } from "@/lib/expenseCalc";
 
 interface Props {
-  paymentCurrency: string;
   foreignAmount: number;
   rate: number | null;
   exchangeRateStatus: ExchangeRateStatus;
@@ -26,7 +25,6 @@ function toRaw(display: string): string {
 }
 
 export function FxStatusSection({
-  paymentCurrency,
   foreignAmount,
   rate,
   exchangeRateStatus,
@@ -63,19 +61,19 @@ export function FxStatusSection({
   };
 
   return (
-    <div className="rounded-2xl border border-outline-variant bg-white/60 px-4 py-4 space-y-4">
+    <section className="border-b border-outline-variant py-5">
       {/* 헤더 + 상태 badge */}
       <div className="flex items-center justify-between">
         <p className="text-[11px] font-semibold tracking-widest text-on-surface-variant uppercase">
-          환율 확정 상태
+          환율
         </p>
         {isEstimated ? (
-          <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
+          <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700">
             <Clock className="w-3 h-3" />
             가환율 적용
           </span>
         ) : (
-          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
             <CheckCircle2 className="w-3 h-3" />
             확정 완료
           </span>
@@ -84,12 +82,12 @@ export function FxStatusSection({
 
       {/* Estimated 상태 */}
       {isEstimated && (
-        <div className="space-y-3">
+        <div className="mt-4 space-y-3">
           {estimatedKrw !== null && (
-            <div className="rounded-xl bg-amber-50/70 border border-amber-200/60 px-4 py-3">
-              <div className="flex items-center justify-between">
+            <div className="rounded-xl bg-amber-50/70 px-3 py-3">
+              <div className="flex items-center justify-between gap-4">
                 <span className="text-xs text-amber-700">예상 원화 금액</span>
-                <span className="text-base font-bold text-amber-800">
+                <span className="text-right text-base font-bold text-amber-800">
                   ₩{estimatedKrw.toLocaleString("ko-KR")}
                 </span>
               </div>
@@ -102,7 +100,7 @@ export function FxStatusSection({
           <button
             type="button"
             onClick={() => onStatusChange("finalized")}
-            className="w-full flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-primary/40 py-3 text-sm font-semibold text-primary hover:bg-primary/5 transition-colors"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-primary/30 bg-white py-3 text-sm font-semibold text-primary transition-colors hover:bg-primary/5"
           >
             <CheckCircle2 className="w-4 h-4" />
             전표매입 후 최종 금액 확정
@@ -112,9 +110,9 @@ export function FxStatusSection({
 
       {/* Finalized 상태 */}
       {isFinalized && (
-        <div className="space-y-3">
+        <div className="mt-4 space-y-3">
           <div>
-            <label className="text-xs text-on-surface-variant mb-1.5 block">
+            <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">
               최종 청구 원화 금액
             </label>
             <div className="relative">
@@ -127,16 +125,16 @@ export function FxStatusSection({
                 value={display}
                 onChange={handleChange}
                 placeholder="0"
-                className="w-full h-10 rounded-md border border-input bg-white/80 pl-7 pr-3 py-2 text-base font-semibold text-on-surface placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                className="h-12 w-full rounded-xl border border-outline-variant bg-white pl-8 pr-3 text-lg font-bold text-on-surface placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30"
               />
             </div>
           </div>
 
           {estimatedKrw !== null && (
-            <div className="rounded-xl bg-emerald-50/60 border border-emerald-200/50 px-4 py-3">
-              <div className="flex items-center justify-between text-xs">
+            <div className="rounded-xl bg-emerald-50/70 px-3 py-3">
+              <div className="flex items-center justify-between gap-4 text-xs">
                 <span className="text-on-surface-variant">가환율 예상 금액</span>
-                <span className="text-on-surface-variant font-medium">
+                <span className="text-right font-medium text-on-surface-variant">
                   ₩{estimatedKrw.toLocaleString("ko-KR")}
                 </span>
               </div>
@@ -149,12 +147,12 @@ export function FxStatusSection({
           <button
             type="button"
             onClick={() => onStatusChange("estimated")}
-            className="text-[11px] text-on-surface-variant underline-offset-2 hover:underline"
+            className="text-[11px] font-semibold text-on-surface-variant underline-offset-2 hover:underline"
           >
             가환율 상태로 되돌리기
           </button>
         </div>
       )}
-    </div>
+    </section>
   );
 }
