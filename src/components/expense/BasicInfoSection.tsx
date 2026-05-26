@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { CalendarClock } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { CATEGORY_META, type ExpenseCategory } from "@/lib/expenses";
@@ -48,17 +49,9 @@ export function BasicInfoSection({
   paidTimeLocal,
   onPaidTimeChange,
 }: Props) {
+  const [dateTimePickerOpen, setDateTimePickerOpen] = useState(false);
   const memberUids = Object.keys(members);
-  const paidDateTimeValue = paidDateLocal
-    ? `${paidDateLocal}T${paidTimeLocal || "00:00"}`
-    : "";
   const paidDateTimeLabel = formatPaidDateTime(paidDateLocal, paidTimeLocal);
-
-  const handleDateTimeChange = (value: string) => {
-    const [date, time] = value.split("T");
-    onPaidDateChange(date ?? "");
-    onPaidTimeChange(time ?? "");
-  };
 
   return (
     <section className="border-b border-outline-variant py-5">
@@ -131,21 +124,39 @@ export function BasicInfoSection({
       {/* 결제일/시간 */}
       <div className="mt-4">
         <label className="mb-1.5 block text-xs font-medium text-on-surface-variant">결제일</label>
-        <div className="relative flex h-12 items-center gap-3 rounded-xl border border-outline-variant bg-white px-3">
+        <button
+          type="button"
+          onClick={() => setDateTimePickerOpen((open) => !open)}
+          aria-expanded={dateTimePickerOpen}
+          className="flex h-12 w-full items-center gap-3 rounded-xl border border-outline-variant bg-white px-3 text-left transition-colors hover:border-primary/40"
+        >
           <CalendarClock className="h-4 w-4 shrink-0 text-primary" />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold text-on-surface">{paidDateTimeLabel}</p>
           </div>
           <span className="shrink-0 text-[11px] font-semibold text-primary">변경</span>
-          <input
-            type="datetime-local"
-            value={paidDateTimeValue}
-            required
-            onChange={(e) => handleDateTimeChange(e.target.value)}
-            aria-label="결제일시"
-            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
-          />
-        </div>
+        </button>
+        {dateTimePickerOpen && (
+          <div className="mt-2 grid grid-cols-[minmax(0,1.3fr)_minmax(0,0.9fr)] gap-2 rounded-xl bg-surface-variant/30 p-2">
+            <Input
+              type="date"
+              value={paidDateLocal}
+              required
+              aria-label="결제일"
+              onInput={(e) => onPaidDateChange(e.currentTarget.value)}
+              onChange={(e) => onPaidDateChange(e.target.value)}
+              className="h-10 min-w-0 rounded-lg border-outline-variant bg-white px-2 text-sm"
+            />
+            <Input
+              type="time"
+              value={paidTimeLocal}
+              aria-label="결제 시간"
+              onInput={(e) => onPaidTimeChange(e.currentTarget.value)}
+              onChange={(e) => onPaidTimeChange(e.target.value)}
+              className="h-10 min-w-0 rounded-lg border-outline-variant bg-white px-2 text-sm"
+            />
+          </div>
+        )}
       </div>
     </section>
   );
