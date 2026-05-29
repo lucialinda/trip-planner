@@ -2,15 +2,25 @@
 
 import { useAuth } from "@/contexts/AuthContext";
 import { useEffect, useState, Suspense } from "react";
-import { doc, onSnapshot } from "firebase/firestore";
+import { collection, doc, getDocs, onSnapshot, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ChevronLeft } from "lucide-react";
+import { Loader2, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { ItineraryTab } from "@/components/ItineraryTab";
 import { BottomNav } from "@/components/BottomNav";
 import { ProfileDialog } from "@/components/ProfileDialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { isAdminUid } from "@/lib/admin";
 
 interface TripData {
   id: string;
@@ -47,6 +57,11 @@ function TripContent() {
   const [trip, setTrip] = useState<TripData | null>(null);
   const [loading, setLoading] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState("");
+  const [editStartDate, setEditStartDate] = useState("");
+  const [editEndDate, setEditEndDate] = useState("");
+  const [savingTrip, setSavingTrip] = useState(false);
 
   useEffect(() => {
     if (!user || !tripId) {
@@ -67,6 +82,60 @@ function TripContent() {
     return () => unsub();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tripId, user, router]);
+
+  const isAdmin = isAdminUid(user?.uid);
+
+  const handleOpenTripEdit = () => {
+    if (!trip) return;
+    setEditName(trip.name || "");
+    setEditStartDate(trip.startDate || "");
+    setEditEndDate(trip.endDate || "");
+    setEditOpen(true);
+  };
+
+  const handleSaveTrip = async () => {
+    if (!tripId || !trip || !isAdmin) return;
+
+    const nextName = editName.trim();
+    if (!nextName || !editStartDate || !editEndDate) {
+      toast.error("여행 이름과 날짜를 입력해주세요.");
+      return;
+    }
+    if (editStartDate > editEndDate) {
+      toast.error("귀국일이 출발일보다 빠를 수 없습니다.");
+      return;
+    }
+
+    setSavingTrip(true);
+    try {
+      const placesSnap = await getDocs(collection(db, "trips", tripId, "places"));
+      const outsidePlace = placesSnap.docs.find((placeDoc) => {
+        const date = placeDoc.data().date;
+        return typeof date === "string" && (date < editStartDate || date > editEndDate);
+      });
+
+      if (
+        outsidePlace &&
+        !window.confirm("새 여행 기간 밖에 있는 일정이 있습니다. 여행 기간만 수정할까요?")
+      ) {
+        return;
+      }
+
+      await updateDoc(doc(db, "trips", tripId), {
+        name: nextName,
+        startDate: editStartDate,
+        endDate: editEndDate,
+      });
+
+      toast.success("여행 정보가 수정되었습니다.");
+      setEditOpen(false);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`수정 실패: ${message}`);
+    } finally {
+      setSavingTrip(false);
+    }
+  };
 
   if (loading)
     return (
@@ -146,6 +215,16 @@ function TripContent() {
               </p>
             </div>
           </div>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={handleOpenTripEdit}
+              aria-label="여행 정보 수정"
+              className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-2xl border border-white/40 bg-white/15 text-white shadow-[0_4px_12px_-2px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-150 hover:scale-105 hover:bg-white/25 active:scale-95"
+            >
+              <Pencil className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </section>
 
@@ -155,6 +234,67 @@ function TripContent() {
       </div>
 
       <ProfileDialog open={profileOpen} onOpenChange={setProfileOpen} />
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent className="max-w-sm rounded-xl">
+          <DialogHeader>
+            <DialogTitle>여행 정보 수정</DialogTitle>
+            <DialogDescription>
+              여행 이름과 전체 여행 기간을 수정합니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-muted-foreground">
+                여행 이름
+              </label>
+              <Input
+                value={editName}
+                onChange={(e) => setEditName(e.target.value)}
+                placeholder="예: 파리 7박8일"
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-muted-foreground">
+                출발일
+              </label>
+              <Input
+                type="date"
+                value={editStartDate}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setEditStartDate(val);
+                  if (!editEndDate || editEndDate < val) setEditEndDate(val);
+                }}
+              />
+            </div>
+            <div>
+              <label className="mb-1 block text-sm font-semibold text-muted-foreground">
+                귀국일
+              </label>
+              <Input
+                type="date"
+                min={editStartDate}
+                value={editEndDate}
+                onChange={(e) => setEditEndDate(e.target.value)}
+              />
+            </div>
+            <div className="flex gap-2 pt-2">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => setEditOpen(false)}
+                disabled={savingTrip}
+              >
+                취소
+              </Button>
+              <Button className="flex-1" onClick={handleSaveTrip} disabled={savingTrip}>
+                {savingTrip && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                수정하기
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* 하단 네비게이션 */}
       <BottomNav />

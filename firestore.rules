@@ -151,7 +151,7 @@ service cloud.firestore {
               request.resource.data.addedByUid == resource.data.addedByUid
               && request.resource.data.addedBy == resource.data.addedBy
               && request.resource.data.createdAt == resource.data.createdAt
-              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['name', 'time', 'startTime', 'endTime', 'placeUrl', 'note'])
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['date', 'name', 'time', 'startTime', 'endTime', 'placeUrl', 'note'])
             )
             || isOwnPlaceVote()
           );

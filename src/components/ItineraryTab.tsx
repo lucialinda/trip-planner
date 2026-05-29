@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import Linkify from "linkify-react";
-import { Edit2, MapPin, MoreHorizontal, Trash2 } from "lucide-react";
+import { Edit2, Loader2, MapPin, MoreHorizontal, Trash2 } from "lucide-react";
 
 interface Place {
   id: string;
@@ -420,6 +420,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingPlace, setEditingPlace] = useState<Place | null>(null);
+  const [savingPlace, setSavingPlace] = useState(false);
   const [modalDate, setModalDate] = useState<string>("");
   const [formData, setFormData] = useState({
     name: "",
@@ -557,8 +558,21 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
   };
 
   const handleSave = async () => {
+    if (savingPlace) return;
     if (!formData.name.trim()) {
       toast.error("일정 이름을 입력해주세요");
+      return;
+    }
+    if (!modalDate) {
+      toast.error("일정 날짜를 선택해주세요");
+      return;
+    }
+    if (trip.startDate && modalDate < trip.startDate) {
+      toast.error("여행 출발일 이후 날짜를 선택해주세요");
+      return;
+    }
+    if (trip.endDate && modalDate > trip.endDate) {
+      toast.error("여행 귀국일 이전 날짜를 선택해주세요");
       return;
     }
     if (formData.startTime && !isCompleteTime(formData.startTime)) {
@@ -578,9 +592,11 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
       return;
     }
 
+    setSavingPlace(true);
     try {
       if (editingPlace) {
         await updateDoc(doc(db, `trips/${tripId}/places`, editingPlace.id), {
+          date: modalDate,
           name: formData.name.trim(),
           time: "",
           startTime: formData.startTime,
@@ -604,10 +620,13 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
         });
         toast.success("일정이 추가되었습니다.");
       }
+      setEditingPlace(null);
       setIsModalOpen(false);
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
       toast.error(`실패: ${message}`);
+    } finally {
+      setSavingPlace(false);
     }
   };
 
@@ -909,7 +928,14 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
       })}
 
       {/* 일정 추가/수정 모달 */}
-      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+      <Dialog
+        open={isModalOpen}
+        onOpenChange={(open) => {
+          if (savingPlace) return;
+          setIsModalOpen(open);
+          if (!open) setEditingPlace(null);
+        }}
+      >
         <DialogContent className="max-w-sm rounded-xl">
           <DialogHeader>
             <DialogTitle>
@@ -918,6 +944,18 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
           </DialogHeader>
           <div className="flex flex-col gap-4 py-2">
             <section className="space-y-3">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700">
+                  날짜 <span className="text-red-500">*</span>
+                </label>
+                <Input
+                  type="date"
+                  value={modalDate}
+                  min={trip.startDate}
+                  max={trip.endDate}
+                  onChange={(e) => setModalDate(e.target.value)}
+                />
+              </div>
               <div className="space-y-2">
                 <label className="text-sm font-semibold text-slate-700">
                   일정 이름 <span className="text-red-500">*</span>
@@ -997,7 +1035,12 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
             </section>
           </div>
           <DialogFooter>
-            <Button onClick={handleSave} className="h-11 w-full rounded-xl text-sm font-semibold">
+            <Button
+              onClick={handleSave}
+              disabled={savingPlace}
+              className="h-11 w-full rounded-xl text-sm font-semibold"
+            >
+              {savingPlace && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {editingPlace ? "수정하기" : "추가하기"}
             </Button>
           </DialogFooter>
