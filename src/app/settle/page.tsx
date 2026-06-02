@@ -856,11 +856,8 @@ function SettleContent() {
   const canManageExpense = (expense: Expense) => {
     if (!user) return false;
     if (expense.status !== "tentative") return false;
-    return (
-      isAdminUid(user.uid) ||
-      expense.createdByUid === user.uid ||
-      expense.paidByUid === user.uid
-    );
+    // 미정산 지출은 모든 여행 멤버가 수정/삭제할 수 있음
+    return isAdminUid(user.uid) || Boolean(trip?.members?.[user.uid]);
   };
 
   const handleDeleteExpense = async (expense: Expense) => {
