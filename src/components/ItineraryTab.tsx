@@ -92,7 +92,10 @@ function badgeDay(iso: string) {
 
 function todayIso() {
   const d = new Date();
-  return d.toISOString().split("T")[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function placeStartTime(place: Place) {
@@ -435,6 +438,8 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
 
   // Swipe refs (placeId → handle)
   const swipeRefs = useRef<Map<string, SwipeableItemHandle | null>>(new Map());
+  const daySectionRefs = useRef<Map<string, HTMLElement | null>>(new Map());
+  const focusedTodayKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!tripId) return;
@@ -487,13 +492,28 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
     : null;
   const canManagePlaces = !!user && (trip.memberUids || []).includes(user.uid);
 
+  useEffect(() => {
+    if (loading || !todayInTrip) return;
+
+    const focusKey = `${tripId}:${todayInTrip}`;
+    if (focusedTodayKeyRef.current === focusKey) return;
+
+    const todaySection = daySectionRefs.current.get(todayInTrip);
+    if (!todaySection) return;
+
+    focusedTodayKeyRef.current = focusKey;
+    requestAnimationFrame(() => {
+      todaySection.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  }, [loading, todayInTrip, tripId, dates.length]);
+
   const nextPlace = useMemo(() => {
     const nowTime = new Date().toTimeString().slice(0, 5);
     const todayUpcoming = (placesByDate[today] || []).find((place) => {
       const startTime = placeStartTime(place);
       return !startTime || startTime > nowTime;
     });
-    if (todayUpcoming) return { place: todayUpcoming, isToday: true };
+    if (todayUpcoming) return { place: todayUpcoming };
 
     const futureDate = Object.keys(placesByDate)
       .filter((date) => date > today)
@@ -501,7 +521,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
       .find((date) => (placesByDate[date] || []).length > 0);
 
     if (!futureDate) return null;
-    return { place: placesByDate[futureDate][0], isToday: false };
+    return { place: placesByDate[futureDate][0] };
   }, [placesByDate, today]);
 
   const closeAllSwipes = (exceptId?: string) => {
@@ -690,7 +710,7 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
   return (
     <div className="pb-32 relative">
       {nextPlace && (() => {
-        const { place, isToday } = nextPlace;
+        const { place } = nextPlace;
         const diffDays = Math.round(
           (new Date(place.date).getTime() - new Date(today).getTime()) /
             (1000 * 60 * 60 * 24)
@@ -739,7 +759,17 @@ export function ItineraryTab({ tripId, trip }: ItineraryTabProps) {
         const isToday = date === todayInTrip;
 
         return (
-          <section key={date} className="mb-8">
+          <section
+            key={date}
+            ref={(node) => {
+              if (node) {
+                daySectionRefs.current.set(date, node);
+              } else {
+                daySectionRefs.current.delete(date);
+              }
+            }}
+            className="mb-8 scroll-mt-20"
+          >
             <div className="text-sm font-bold mb-3 flex items-center justify-between">
               <span className={isToday ? "text-tertiary" : "text-primary"}>
                 {isToday && (
