@@ -170,6 +170,13 @@ service cloud.firestore {
               'description',
               'paidByUid',
               'paidBy',
+              'paymentCurrency',
+              'foreignAmount',
+              'exchangeRate',
+              'exchangeRateStatus',
+              'estimatedKrwAmount',
+              'finalizedKrwAmount',
+              'cardSettlementConfirmed',
               'localCurrency',
               'localAmount',
               'rate',
@@ -191,6 +198,11 @@ service cloud.firestore {
             && request.resource.data.description is string
             && request.resource.data.paidByUid in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
             && request.resource.data.paidBy is string
+            && request.resource.data.paymentCurrency is string
+            && request.resource.data.foreignAmount is number
+            && request.resource.data.foreignAmount > 0
+            && request.resource.data.exchangeRate is number
+            && request.resource.data.exchangeRate > 0
             && request.resource.data.localCurrency is string
             && request.resource.data.localAmount is number
             && request.resource.data.localAmount > 0
@@ -229,6 +241,32 @@ service cloud.firestore {
                 request.resource.data.confirmedKrwAmount is number
                 && request.resource.data.confirmedKrwAmount > 0
               )
+            )
+            && (
+              !('exchangeRateStatus' in request.resource.data)
+              || request.resource.data.exchangeRateStatus == null
+              || request.resource.data.exchangeRateStatus in ['estimated', 'finalized']
+            )
+            && (
+              !('estimatedKrwAmount' in request.resource.data)
+              || request.resource.data.estimatedKrwAmount == null
+              || (
+                request.resource.data.estimatedKrwAmount is number
+                && request.resource.data.estimatedKrwAmount > 0
+              )
+            )
+            && (
+              !('finalizedKrwAmount' in request.resource.data)
+              || request.resource.data.finalizedKrwAmount == null
+              || (
+                request.resource.data.finalizedKrwAmount is number
+                && request.resource.data.finalizedKrwAmount > 0
+              )
+            )
+            && (
+              !('cardSettlementConfirmed' in request.resource.data)
+              || request.resource.data.cardSettlementConfirmed == null
+              || request.resource.data.cardSettlementConfirmed is bool
             )
             && (
               !('settlementRequestId' in request.resource.data)
