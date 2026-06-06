@@ -9,7 +9,9 @@
     "lint": "eslint",
     "emulator": "firebase emulators:start --import=./emulator_data --export-on-exit=./emulator_data",
     "seed:expenses": "node scripts/seed-expenses.mjs",
-    "seed:members": "node scripts/seed-members.mjs"
+    "seed:members": "node scripts/seed-members.mjs",
+    "sync:settlement-names": "node scripts/sync-settlement-member-names.mjs",
+    "sync:settlement-names:commit": "node scripts/sync-settlement-member-names.mjs --commit"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

@@ -261,6 +261,9 @@ function normalizeSettlementSettings(data: Record<string, unknown> | undefined):
   };
 }
 
+function getMemberName(members: Record<string, string>, uid: string, fallback = "이름 없음"): string {
+  return members[uid] ?? fallback;
+}
 
 function getSettlementAccountText(settings: SettlementSettings) {
   const bank = settings.settlementAccountBank.trim();
@@ -386,9 +389,6 @@ function calculateNetBalances(
     const participantUids = getParticipantUids(expense, memberUids);
     if (participantUids.length === 0 || !expense.paidByUid) continue;
 
-    if (expense.paidBy) {
-      memberNames.set(expense.paidByUid, expense.paidBy);
-    }
     balances.set(expense.paidByUid, (balances.get(expense.paidByUid) ?? 0) + amount);
 
     const shares = calculateRoundedShares(amount, participantUids, expense.paidByUid);
@@ -502,9 +502,9 @@ function buildSettlementPreviewData({
         id: expense.id,
         title: expense.description || CATEGORY_META[expense.category].label,
         amount: effectiveKrw(expense),
-        paidByName: members[expense.paidByUid] ?? expense.paidBy ?? "결제자",
+        paidByName: getMemberName(members, expense.paidByUid, "결제자"),
         participants: participantUids.map((uid) => ({
-          name: members[uid] ?? "이름 없음",
+          name: getMemberName(members, uid),
           isPayer: uid === expense.paidByUid,
         })),
         hasSharedSettlement: participantUids.some((uid) => uid !== expense.paidByUid),
@@ -532,9 +532,9 @@ function buildExpenseSnapshots(
       title: expense.description || CATEGORY_META[expense.category].label,
       amount: Math.round(effectiveKrw(expense)),
       payerUid: expense.paidByUid,
-      payerName: members[expense.paidByUid] ?? expense.paidBy ?? "결제자",
+      payerName: getMemberName(members, expense.paidByUid, "결제자"),
       participantUids,
-      participantNames: participantUids.map((uid) => members[uid] ?? "이름 없음"),
+      participantNames: participantUids.map((uid) => getMemberName(members, uid)),
     };
   });
 }
@@ -811,6 +811,15 @@ function SettleContent() {
     () => expenses.filter((expense) => selectedExpenseIds.has(expense.id)),
     [expenses, selectedExpenseIds]
   );
+  const selectableFilteredExpenseIds = useMemo(
+    () => filteredExpenses
+      .filter((expense) => expense.status === "tentative")
+      .map((expense) => expense.id),
+    [filteredExpenses]
+  );
+  const allFilteredExpensesSelected =
+    selectableFilteredExpenseIds.length > 0 &&
+    selectableFilteredExpenseIds.every((expenseId) => selectedExpenseIds.has(expenseId));
 
   const selectedSettlementRequest = useMemo(
     () => settlementRequests.find((request) => request.id === requestIdParam) ?? null,
@@ -839,6 +848,10 @@ function SettleContent() {
 
   const clearSelectedExpenses = () => {
     setSelectedExpenseIds(new Set());
+  };
+
+  const selectAllFilteredExpenses = () => {
+    setSelectedExpenseIds(new Set(selectableFilteredExpenseIds));
   };
 
   const toggleExpenseSelection = (expenseId: string) => {
@@ -1100,7 +1113,10 @@ function SettleContent() {
     }
   };
   const showSettlementActionBar =
-    !isSubPage && filter === "tentative" && selectedExpenseIds.size > 0;
+    !isSubPage &&
+    filter === "tentative" &&
+    selectionMode &&
+    selectableFilteredExpenseIds.length > 0;
 
   return (
     <div className="relative mx-auto flex min-h-screen w-full max-w-3xl flex-col overflow-x-hidden bg-background shadow-sm sm:border-x">
@@ -1169,6 +1185,7 @@ function SettleContent() {
                 expenses={expenses}
                 byCategory={byCategory}
                 total={total}
+                members={trip?.members ?? EMPTY_MEMBERS}
               />
             ) : (
               <>
@@ -1410,24 +1427,34 @@ function SettleContent() {
 
       {showSettlementActionBar && (
         <div className="fixed bottom-24 left-1/2 z-40 w-full max-w-3xl -translate-x-1/2 px-4">
-          <div className="flex items-center justify-between gap-3 rounded-2xl border border-sky-100 bg-white px-4 py-3 shadow-lg shadow-primary/10">
+          <div className="flex flex-col gap-2 rounded-2xl border border-sky-100 bg-white px-4 py-3 shadow-lg shadow-primary/10 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
             <div className="min-w-0">
               <p className="text-sm font-bold text-on-surface">
                 {selectedExpenseIds.size}건 선택됨
               </p>
             </div>
-            <div className="flex shrink-0 items-center gap-3">
+            <div className="flex shrink-0 items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={selectAllFilteredExpenses}
+                disabled={allFilteredExpensesSelected}
+                className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary disabled:cursor-default disabled:text-on-surface-variant/40"
+              >
+                전체 선택
+              </button>
               <button
                 type="button"
                 onClick={clearSelectedExpenses}
-                className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary"
+                disabled={selectedExpenseIds.size === 0}
+                className="text-sm font-semibold text-on-surface-variant transition-colors hover:text-primary disabled:cursor-default disabled:text-on-surface-variant/40"
               >
                 선택 해제
               </button>
               <button
                 type="button"
                 onClick={handleShareSettlementRequest}
-                className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm shadow-primary/25 transition-transform active:scale-[0.98]"
+                disabled={selectedExpenseIds.size === 0}
+                className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm shadow-primary/25 transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-primary/40 disabled:shadow-none"
               >
                 정산요청
               </button>
@@ -2030,6 +2057,7 @@ function ExpenseCard({
       ? Object.keys(expense.participants ?? {}).map((uid) => [uid, members[uid] ?? ""] as const)
       : Object.entries(members)
   ).filter(([, name]) => !!name);
+  const payerName = getMemberName(members, expense.paidByUid, "");
   const visibleParticipants = participantEntries.slice(0, 4);
   const hiddenParticipantCount = Math.max(0, participantEntries.length - visibleParticipants.length);
 
@@ -2077,7 +2105,7 @@ function ExpenseCard({
           </span>
         </h4>
         <p className="text-on-surface-variant text-xs mt-0.5">
-          {expense.paidBy ? `${expense.paidBy} 결제 · ` : ""}
+          {payerName ? `${payerName} 결제 · ` : ""}
           {formatPaidDate(expense.paidAt)}
         </p>
         {participantEntries.length > 0 && (
@@ -2150,10 +2178,12 @@ function CategoryExpenseReport({
   expenses,
   byCategory,
   total,
+  members,
 }: {
   expenses: Expense[];
   byCategory: Record<ExpenseCategory, number>;
   total: number;
+  members: Record<string, string>;
 }) {
   const [expandedCategory, setExpandedCategory] = useState<ExpenseCategory | null>(null);
   const rows: CategoryReportRow[] = CATEGORY_ORDER.map((category) => {
@@ -2248,25 +2278,28 @@ function CategoryExpenseReport({
 
                 {expanded && (
                   <div className="mt-3 space-y-2 border-t border-outline-variant/60 pt-3">
-                    {row.items.map((expense) => (
-                      <article key={expense.id} className="rounded-xl border border-outline-variant/60 bg-white/80 px-3 py-2.5">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold text-on-surface">{expense.description || row.meta.label}</p>
-                            <p className="mt-0.5 text-[11px] text-on-surface-variant">
-                              {expense.paidBy ? `${expense.paidBy} 결제 · ` : ""}
-                              {formatPaidDate(expense.paidAt)}
-                            </p>
+                    {row.items.map((expense) => {
+                      const payerName = getMemberName(members, expense.paidByUid, "");
+                      return (
+                        <article key={expense.id} className="rounded-xl border border-outline-variant/60 bg-white/80 px-3 py-2.5">
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-sm font-semibold text-on-surface">{expense.description || row.meta.label}</p>
+                              <p className="mt-0.5 text-[11px] text-on-surface-variant">
+                                {payerName ? `${payerName} 결제 · ` : ""}
+                                {formatPaidDate(expense.paidAt)}
+                              </p>
+                            </div>
+                            <div className="shrink-0 text-right">
+                              <p className="text-sm font-bold text-on-surface">{formatKrw(effectiveKrw(expense))}</p>
+                              <p className="mt-0.5 text-[11px] font-semibold text-on-surface-variant">
+                                {expense.status === "confirmed" ? "정산완료" : expense.status === "requested" ? "요청중" : "미정산"}
+                              </p>
+                            </div>
                           </div>
-                          <div className="shrink-0 text-right">
-                            <p className="text-sm font-bold text-on-surface">{formatKrw(effectiveKrw(expense))}</p>
-                            <p className="mt-0.5 text-[11px] font-semibold text-on-surface-variant">
-                              {expense.status === "confirmed" ? "정산완료" : expense.status === "requested" ? "요청중" : "미정산"}
-                            </p>
-                          </div>
-                        </div>
-                      </article>
-                    ))}
+                        </article>
+                      );
+                    })}
                   </div>
                 )}
               </div>
