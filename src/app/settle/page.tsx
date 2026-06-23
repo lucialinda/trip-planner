@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
+  addDoc,
   collection,
   deleteDoc,
   deleteField,
@@ -13,6 +14,7 @@ import {
   query,
   runTransaction,
   serverTimestamp,
+  updateDoc,
   type FirestoreError,
 } from "firebase/firestore";
 import { toast } from "sonner";
@@ -35,6 +37,7 @@ import {
   fromDoc,
   getParticipantUids,
   isEstimated,
+  isFinalized,
   isForeignCurrency,
 } from "@/lib/expenses";
 import { isAdminUid } from "@/lib/admin";
@@ -84,6 +87,16 @@ interface SettlementExpenseItem {
   hasSharedSettlement: boolean;
 }
 
+interface SettlementAdjustmentSnapshot {
+  adjustmentId: string;
+  fromUid: string;
+  fromName: string;
+  toUid: string;
+  toName: string;
+  amount: number;
+  memo?: string;
+}
+
 interface SettlementPreviewData {
   requestId: string;
   title: string;
@@ -94,6 +107,7 @@ interface SettlementPreviewData {
   transfers: SettlementTransfer[];
   transferTotal: number;
   expenses: SettlementExpenseItem[];
+  adjustments: SettlementAdjustmentSnapshot[];
   accountLines: string[];
   pageUrl: string;
 }
@@ -126,6 +140,8 @@ interface SettlementRequest {
   cancelledByName?: string;
   expenseIds: string[];
   expenseSnapshots: SettlementExpenseSnapshot[];
+  adjustmentIds: string[];
+  adjustmentSnapshots: SettlementAdjustmentSnapshot[];
   transfers: SettlementTransfer[];
   totalExpenseAmount: number;
   transferTotal: number;
@@ -205,6 +221,53 @@ type CategoryReportRow = {
   barClass: string;
 };
 
+type ProductionSettlementMemberRow = {
+  uid: string;
+  name: string;
+  paidTotal: number;
+  shareTotal: number;
+  balance: number;
+  expenseCount: number;
+  estimatedCount: number;
+  finalizedCount: number;
+};
+
+type ProductionSettlementReport = {
+  total: number;
+  expenseCount: number;
+  estimatedCount: number;
+  finalizedCount: number;
+  krwCount: number;
+  tentativeCount: number;
+  requestedCount: number;
+  confirmedCount: number;
+  memberRows: ProductionSettlementMemberRow[];
+  transfers: SettlementTransfer[];
+};
+
+type ManualOffset = {
+  id: string;
+  fromUid: string;
+  toUid: string;
+  amount: number;
+  status: "active" | "applied" | "voided";
+  memo?: string;
+  createdBy: string;
+  appliedToSettlementRequestId: string | null;
+};
+
+function isFirestorePermissionDenied(e: unknown): boolean {
+  return typeof e === "object" && e !== null && "code" in e && (e as { code?: unknown }).code === "permission-denied";
+}
+
+function settlementAdjustmentErrorMessage(e: unknown): string {
+  const message = e instanceof Error ? e.message : String(e);
+  if (isFirestorePermissionDenied(e)) {
+    return "권한이 거부됐어요. 로컬에서는 Firestore emulator를 재시작해서 최신 firestore.rules를 반영해야 합니다.";
+  }
+  return message;
+}
+
 function formatPaidDate(date: Date): string {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, "0");
@@ -218,6 +281,11 @@ function formatRequestDate(date: Date | undefined): string {
   const m = String(date.getMonth() + 1).padStart(2, "0");
   const d = String(date.getDate()).padStart(2, "0");
   return `${y}.${m}.${d}`;
+}
+
+function formatSignedKrw(amount: number): string {
+  if (Math.abs(amount) <= 1) return formatKrw(0);
+  return `${amount > 0 ? "+" : "-"}${formatKrw(Math.abs(amount))}`;
 }
 
 function getRequestStatusDate(request: SettlementRequest): Date | undefined {
@@ -289,33 +357,44 @@ function getSettlementAccountSnapshotText(account: SettlementAccount | undefined
 }
 
 function buildSettlementShareMessage(data: Omit<SettlementPreviewData, "text">): string {
-  const expenseLines = data.expenses.map((expense, idx) =>
-    [
-      `${idx + 1}) ${expense.title}`,
-      `   - 금액: ${formatKrw(expense.amount)}`,
-      `   - 결제자: ${expense.paidByName}`,
-      expense.hasSharedSettlement
-        ? `   - 정산 인원: ${expense.participants.map((participant) => participant.name).join(", ") || "정산 멤버 없음"}`
-        : "   - 정산 없음",
-    ].join("\n")
-  );
   const transferLines = data.transfers.map(
     (transfer) => `- ${transfer.fromName} → ${transfer.toName}: ${formatKrw(transfer.amount)}`
   );
 
   return [
     "🧾 정산 대상",
-    `총 ${data.expenseCount}건 · 총 지출 ${formatKrw(data.total)}`,
-    `상계 후 송금 ${formatKrw(data.transferTotal)}`,
-    "\n📌 지출 내역",
-    expenseLines.join("\n\n") || "정산 대상 지출이 없어요.",
-    "\n💸 상계 후 보낼 금액",
-    "서로 주고받을 금액을 상계한 뒤, 실제로 송금할 금액입니다.",
+    `지출 ${data.expenseCount}건${data.adjustments.length > 0 ? ` · 추가 조정 ${data.adjustments.length}건` : ""}`,
+    `총 지출 ${formatKrw(data.total)}`,
+    "\n💸 최종 송금 금액",
     transferLines.join("\n") || "- 정산 대상 없음",
     "\n🏦 송금 계좌",
     data.accountLines.map((line) => `- ${line}`).join("\n"),
     data.pageUrl ? "\n🔗 정산 페이지" : "",
     data.pageUrl,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function buildSettlementRequestShareMessage(request: SettlementRequest, pageUrl: string): string {
+  const transferLines = request.transfers.map(
+    (transfer) => `- ${transfer.fromName} → ${transfer.toName}: ${formatKrw(transfer.amount)}`
+  );
+  const receiverAccounts = Array.from(new Map(request.transfers.map((transfer) => [transfer.toUid, transfer])).values());
+  const accountLines = receiverAccounts.map(
+    (transfer) => `- ${transfer.toName}: ${getSettlementAccountSnapshotText(transfer.toAccount)}`
+  );
+
+  return [
+    "🧾 정산 대상",
+    `지출 ${request.expenseIds.length}건${request.adjustmentIds.length > 0 ? ` · 추가 조정 ${request.adjustmentIds.length}건` : ""}`,
+    `총 지출 ${formatKrw(request.totalExpenseAmount)}`,
+    "\n💸 최종 송금 금액",
+    transferLines.join("\n") || "- 정산 대상 없음",
+    "\n🏦 송금 계좌",
+    accountLines.join("\n") || "- 계좌 미등록",
+    pageUrl ? "\n🔗 정산 페이지" : "",
+    pageUrl,
   ]
     .filter(Boolean)
     .join("\n");
@@ -345,6 +424,10 @@ function parseSettlementRequestDoc(id: string, data: Record<string, unknown>): S
     expenseSnapshots: Array.isArray(data.expenseSnapshots)
       ? (data.expenseSnapshots as SettlementExpenseSnapshot[])
       : [],
+    adjustmentIds: Array.isArray(data.adjustmentIds) ? (data.adjustmentIds as string[]) : [],
+    adjustmentSnapshots: Array.isArray(data.adjustmentSnapshots)
+      ? (data.adjustmentSnapshots as SettlementAdjustmentSnapshot[])
+      : [],
     transfers: Array.isArray(data.transfers) ? (data.transfers as SettlementTransfer[]) : [],
     totalExpenseAmount: typeof data.totalExpenseAmount === "number" ? data.totalExpenseAmount : 0,
     transferTotal: typeof data.transferTotal === "number" ? data.transferTotal : 0,
@@ -352,6 +435,22 @@ function parseSettlementRequestDoc(id: string, data: Record<string, unknown>): S
     shareMessage: data.shareMessage as string | undefined,
     createdAt: ts("createdAt"),
     updatedAt: ts("updatedAt"),
+  };
+}
+
+function parseSettlementAdjustmentDoc(id: string, data: Record<string, unknown>): ManualOffset {
+  return {
+    id,
+    fromUid: (data.fromMemberId as string) ?? "",
+    toUid: (data.toMemberId as string) ?? "",
+    amount: typeof data.amount === "number" ? data.amount : 0,
+    status: (data.status as ManualOffset["status"]) ?? "active",
+    memo: data.memo as string | undefined,
+    createdBy: (data.createdBy as string) ?? "",
+    appliedToSettlementRequestId:
+      typeof data.appliedToSettlementRequestId === "string"
+        ? data.appliedToSettlementRequestId
+        : null,
   };
 }
 
@@ -400,6 +499,24 @@ function calculateNetBalances(
   return { balances, memberNames };
 }
 
+function applyManualOffsetsToBalances(
+  base: SettlementBalanceResult,
+  adjustments: ManualOffset[],
+  members: Record<string, string>
+): SettlementBalanceResult {
+  const balances = new Map(base.balances);
+  const memberNames = new Map(base.memberNames);
+
+  for (const adjustment of adjustments) {
+    memberNames.set(adjustment.fromUid, members[adjustment.fromUid] ?? memberNames.get(adjustment.fromUid) ?? "이름 없음");
+    memberNames.set(adjustment.toUid, members[adjustment.toUid] ?? memberNames.get(adjustment.toUid) ?? "이름 없음");
+    balances.set(adjustment.fromUid, (balances.get(adjustment.fromUid) ?? 0) - adjustment.amount);
+    balances.set(adjustment.toUid, (balances.get(adjustment.toUid) ?? 0) + adjustment.amount);
+  }
+
+  return { balances, memberNames };
+}
+
 function buildOptimizedTransfers({ balances, memberNames }: SettlementBalanceResult): SettlementTransfer[] {
   const debtors = Array.from(balances.entries())
     .filter(([, balance]) => balance < -1)
@@ -437,6 +554,92 @@ function buildOptimizedTransfers({ balances, memberNames }: SettlementBalanceRes
   return transfers;
 }
 
+function buildProductionSettlementReport(
+  expenses: Expense[],
+  members: Record<string, string>
+): ProductionSettlementReport {
+  const memberUids = Object.keys(members);
+  const rows = new Map<string, ProductionSettlementMemberRow>();
+
+  const ensureRow = (uid: string, fallbackName?: string) => {
+    const existing = rows.get(uid);
+    if (existing) return existing;
+    const row: ProductionSettlementMemberRow = {
+      uid,
+      name: members[uid] ?? fallbackName ?? "이름 없음",
+      paidTotal: 0,
+      shareTotal: 0,
+      balance: 0,
+      expenseCount: 0,
+      estimatedCount: 0,
+      finalizedCount: 0,
+    };
+    rows.set(uid, row);
+    return row;
+  };
+
+  for (const uid of memberUids) {
+    ensureRow(uid);
+  }
+
+  let total = 0;
+  let estimatedCount = 0;
+  let finalizedCount = 0;
+  let krwCount = 0;
+  let tentativeCount = 0;
+  let requestedCount = 0;
+  let confirmedCount = 0;
+
+  for (const expense of expenses) {
+    const amount = Math.round(effectiveKrw(expense));
+    total += amount;
+
+    if (isEstimated(expense)) estimatedCount += 1;
+    if (isFinalized(expense)) finalizedCount += 1;
+    if (!isForeignCurrency(expense)) krwCount += 1;
+    if (expense.status === "tentative") tentativeCount += 1;
+    if (expense.status === "requested") requestedCount += 1;
+    if (expense.status === "confirmed") confirmedCount += 1;
+
+    if (expense.paidByUid) {
+      const payerRow = ensureRow(expense.paidByUid, expense.paidBy || "결제자");
+      payerRow.paidTotal += amount;
+      payerRow.expenseCount += 1;
+      if (isEstimated(expense)) payerRow.estimatedCount += 1;
+      if (isFinalized(expense)) payerRow.finalizedCount += 1;
+    }
+
+    const participantUids = getParticipantUids(expense, memberUids);
+    if (participantUids.length === 0 || !expense.paidByUid) continue;
+
+    const shares = calculateRoundedShares(amount, participantUids, expense.paidByUid);
+    for (const [uid, share] of shares) {
+      ensureRow(uid).shareTotal += share;
+    }
+  }
+
+  const balances = new Map<string, number>();
+  const memberNames = new Map<string, string>();
+  for (const row of rows.values()) {
+    row.balance = row.paidTotal - row.shareTotal;
+    balances.set(row.uid, row.balance);
+    memberNames.set(row.uid, row.name);
+  }
+
+  return {
+    total,
+    expenseCount: expenses.length,
+    estimatedCount,
+    finalizedCount,
+    krwCount,
+    tentativeCount,
+    requestedCount,
+    confirmedCount,
+    memberRows: Array.from(rows.values()).sort((a, b) => b.balance - a.balance),
+    transfers: buildOptimizedTransfers({ balances, memberNames }),
+  };
+}
+
 function payerFirstUids(participantUids: string[], payerUid: string): string[] {
   return [...participantUids].sort((a, b) => {
     if (a === payerUid) return -1;
@@ -450,6 +653,7 @@ function buildSettlementPreviewData({
   tripName,
   members,
   expenses,
+  adjustments,
   settings,
   settingsByUid,
   pageUrl,
@@ -458,13 +662,16 @@ function buildSettlementPreviewData({
   tripName: string;
   members: Record<string, string>;
   expenses: Expense[];
+  adjustments: ManualOffset[];
   settings: SettlementSettings;
   settingsByUid: Record<string, SettlementSettings>;
   pageUrl: string;
 }): SettlementPreviewData {
   const memberUids = Object.keys(members);
   const total = expenses.reduce((sum, expense) => sum + effectiveKrw(expense), 0);
-  const baseTransfers = buildOptimizedTransfers(calculateNetBalances(expenses, members));
+  const baseTransfers = buildOptimizedTransfers(
+    applyManualOffsetsToBalances(calculateNetBalances(expenses, members), adjustments, members)
+  );
   const transfers = baseTransfers.map((transfer) => {
     const receiverSettings = settingsByUid[transfer.toUid] ?? DEFAULT_SETTLEMENT_SETTINGS;
     const toAccount = settlementSettingsToAccount(receiverSettings);
@@ -488,6 +695,15 @@ function buildSettlementPreviewData({
     const receiverAccount = transfers.find((transfer) => transfer.toUid === uid)?.toAccount;
     return `${receiverName}: ${getSettlementAccountSnapshotText(receiverAccount)}`;
   });
+  const adjustmentSnapshots = adjustments.map((adjustment) => ({
+    adjustmentId: adjustment.id,
+    fromUid: adjustment.fromUid,
+    fromName: getMemberName(members, adjustment.fromUid),
+    toUid: adjustment.toUid,
+    toName: getMemberName(members, adjustment.toUid),
+    amount: adjustment.amount,
+    ...(adjustment.memo ? { memo: adjustment.memo } : {}),
+  }));
   const previewData = {
     requestId,
     title,
@@ -510,6 +726,7 @@ function buildSettlementPreviewData({
         hasSharedSettlement: participantUids.some((uid) => uid !== expense.paidByUid),
       };
     }),
+    adjustments: adjustmentSnapshots,
     accountLines,
     pageUrl,
   };
@@ -547,6 +764,7 @@ function SettleContent() {
   const tripId = searchParams.get("id");
   const requestIdParam = searchParams.get("request");
   const tabParam = searchParams.get("tab");
+  const selectedExpenseIdsParam = searchParams.get("selected");
   const { user, loading: authLoading } = useAuth();
 
   const [trip, setTrip] = useState<TripData | null>(null);
@@ -555,7 +773,10 @@ function SettleContent() {
   const [expensesLoading, setExpensesLoading] = useState(true);
   const [expensesError, setExpensesError] = useState<FirestoreError | null>(null);
   const [settlementRequests, setSettlementRequests] = useState<SettlementRequest[]>([]);
+  const [settlementAdjustments, setSettlementAdjustments] = useState<ManualOffset[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
+  const [adjustmentsLoading, setAdjustmentsLoading] = useState(true);
+  const [adjustmentsError, setAdjustmentsError] = useState<FirestoreError | null>(null);
   const [filter, setFilter] = useState<FilterKey>("all");
   const [listMode, setListMode] = useState<ListMode>("latest");
   const [listModeMenuOpen, setListModeMenuOpen] = useState(false);
@@ -652,6 +873,33 @@ function SettleContent() {
         console.error("[settle] settlementRequests onSnapshot error", err);
         toast.error("정산 요청 목록을 불러오지 못했어요.");
         setRequestsLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [user, tripId]);
+
+  useEffect(() => {
+    if (!user || !tripId) return;
+    const q = query(
+      collection(db, "trips", tripId, "settlementAdjustments"),
+      orderBy("createdAt", "asc")
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setSettlementAdjustments(
+          snap.docs
+            .map((d) => parseSettlementAdjustmentDoc(d.id, d.data() as Record<string, unknown>))
+            .filter((adjustment) => adjustment.status !== "voided")
+        );
+        setAdjustmentsError(null);
+        setAdjustmentsLoading(false);
+      },
+      (err) => {
+        console.error("[settle] settlementAdjustments onSnapshot error", err);
+        setAdjustmentsError(err);
+        toast.error(`추가 조정 항목을 불러오지 못했어요: ${settlementAdjustmentErrorMessage(err)}`);
+        setAdjustmentsLoading(false);
       }
     );
     return () => unsub();
@@ -811,6 +1059,29 @@ function SettleContent() {
     () => expenses.filter((expense) => selectedExpenseIds.has(expense.id)),
     [expenses, selectedExpenseIds]
   );
+  const selectedProductionExpenseIdSet = useMemo(
+    () => new Set(
+      (selectedExpenseIdsParam ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter(Boolean)
+    ),
+    [selectedExpenseIdsParam]
+  );
+  const tentativeExpenses = useMemo(
+    () => expenses.filter((expense) => expense.status === "tentative"),
+    [expenses]
+  );
+  const productionPreviewExpenses = useMemo(
+    () => selectedProductionExpenseIdSet.size > 0
+      ? tentativeExpenses.filter((expense) => selectedProductionExpenseIdSet.has(expense.id))
+      : tentativeExpenses,
+    [selectedProductionExpenseIdSet, tentativeExpenses]
+  );
+  const activeSettlementAdjustments = useMemo(
+    () => settlementAdjustments.filter((adjustment) => adjustment.status === "active"),
+    [settlementAdjustments]
+  );
   const selectableFilteredExpenseIds = useMemo(
     () => filteredExpenses
       .filter((expense) => expense.status === "tentative")
@@ -825,10 +1096,25 @@ function SettleContent() {
     () => settlementRequests.find((request) => request.id === requestIdParam) ?? null,
     [settlementRequests, requestIdParam]
   );
+  const productionSettlementReport = useMemo(
+    () => buildProductionSettlementReport(
+      productionPreviewExpenses,
+      trip?.members ?? EMPTY_MEMBERS
+    ),
+    [productionPreviewExpenses, trip?.members]
+  );
+  const settlementStatusCounts = useMemo(
+    () => ({
+      tentative: expenses.filter((expense) => expense.status === "tentative").length,
+      confirmed: expenses.filter((expense) => expense.status === "confirmed").length,
+    }),
+    [expenses]
+  );
 
   const isRequestsTab = tabParam === "requests";
   const isCategoryReportTab = tabParam === "categories";
-  const isSubPage = isRequestsTab || isCategoryReportTab;
+  const isProductionReportTab = tabParam === "production";
+  const isSubPage = isRequestsTab || isCategoryReportTab || isProductionReportTab;
   const profilePhoto = user ? memberPhotos[user.uid] || user.photoURL || null : null;
 
 
@@ -852,6 +1138,18 @@ function SettleContent() {
 
   const selectAllFilteredExpenses = () => {
     setSelectedExpenseIds(new Set(selectableFilteredExpenseIds));
+  };
+
+  const openProductionPreviewForSelectedExpenses = () => {
+    if (!tripId) return;
+    const ids = selectedExpenses
+      .filter((expense) => expense.status === "tentative")
+      .map((expense) => expense.id);
+    if (ids.length === 0) {
+      toast.error("정산 미리보기로 확인할 미정산 내역을 선택해 주세요.");
+      return;
+    }
+    router.push(`/settle?id=${tripId}&tab=production&selected=${ids.join(",")}`);
   };
 
   const toggleExpenseSelection = (expenseId: string) => {
@@ -889,13 +1187,13 @@ function SettleContent() {
     }
   };
 
-  const handleShareSettlementRequest = async () => {
-    if (selectedExpenses.length === 0) {
+  const handleCreateSettlementRequest = async (targetExpenses: Expense[], targetAdjustments: ManualOffset[]) => {
+    if (targetExpenses.length === 0) {
       toast.error("정산 요청할 내역을 선택해 주세요.");
       return;
     }
     if (!tripId) return;
-    const invalidExpense = selectedExpenses.find((expense) => expense.status !== "tentative");
+    const invalidExpense = targetExpenses.find((expense) => expense.status !== "tentative");
     if (invalidExpense) {
       toast.error("이미 요청중이거나 완료된 지출은 새 요청에 포함할 수 없어요.");
       return;
@@ -911,25 +1209,43 @@ function SettleContent() {
       requestId: requestRef.id,
       tripName: trip?.name ?? "여행",
       members: trip?.members ?? EMPTY_MEMBERS,
-      expenses: selectedExpenses,
+      expenses: targetExpenses,
+      adjustments: targetAdjustments,
       settings: settlementSettings,
       settingsByUid: { ...memberSettlementSettings, ...(user ? { [user.uid]: settlementSettings } : {}) },
       pageUrl: shareUrl,
     });
-    setSettlementPreview(preview);
-    setPreviewOpen(true);
+    setSettlementConfirming(true);
+    try {
+      await createSettlementRequest(preview);
+      toast.success("정산 요청을 생성했어요.");
+      exitSelectionMode();
+      router.replace(`/settle?id=${tripId}&request=${requestRef.id}`);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error(`정산 요청 생성 실패: ${message}`);
+    } finally {
+      setSettlementConfirming(false);
+    }
   };
 
   const createSettlementRequest = async (preview: SettlementPreviewData) => {
     if (!user || !tripId || !trip) throw new Error("정산 요청을 만들 수 있는 여행 정보가 없어요.");
-    const selectedIds = selectedExpenses.map((expense) => expense.id);
+    const selectedIds = preview.expenses.map((expense) => expense.id);
     if (selectedIds.length === 0) throw new Error("선택된 지출이 없어요.");
 
     const members = trip.members ?? EMPTY_MEMBERS;
     const requestedByName = members[user.uid] ?? user.displayName ?? "요청자";
     const requestRef = doc(db, "trips", tripId, "settlementRequests", preview.requestId);
     const expenseRefs = selectedIds.map((expenseId) => doc(db, "trips", tripId, "expenses", expenseId));
-    const snapshots = buildExpenseSnapshots(selectedExpenses, members);
+    const adjustmentIds = preview.adjustments.map((adjustment) => adjustment.adjustmentId);
+    const adjustmentRefs = adjustmentIds.map((adjustmentId) => doc(db, "trips", tripId, "settlementAdjustments", adjustmentId));
+    const expensesById = new Map(expenses.map((expense) => [expense.id, expense]));
+    const snapshotExpenses = selectedIds.map((expenseId) => expensesById.get(expenseId));
+    if (snapshotExpenses.some((expense) => !expense)) {
+      throw new Error("선택한 지출 중 현재 목록에서 찾을 수 없는 내역이 있어요.");
+    }
+    const snapshots = buildExpenseSnapshots(snapshotExpenses as Expense[], members);
 
     await runTransaction(db, async (transaction) => {
       const requestSnap = await transaction.get(requestRef);
@@ -938,6 +1254,7 @@ function SettleContent() {
       }
 
       const expenseSnaps = await Promise.all(expenseRefs.map((ref) => transaction.get(ref)));
+      const adjustmentSnaps = await Promise.all(adjustmentRefs.map((ref) => transaction.get(ref)));
       for (const snap of expenseSnaps) {
         if (!snap.exists()) {
           throw new Error("선택한 지출 중 삭제된 내역이 있어요.");
@@ -945,6 +1262,14 @@ function SettleContent() {
         const status = snap.data().status;
         if (status !== "tentative") {
           throw new Error("이미 요청중이거나 완료된 지출이 포함되어 있어요.");
+        }
+      }
+      for (const snap of adjustmentSnaps) {
+        if (!snap.exists()) {
+          throw new Error("추가 조정 항목 중 삭제된 내역이 있어요.");
+        }
+        if (snap.data().status !== "active") {
+          throw new Error("이미 정산에 반영되었거나 취소된 추가 조정 항목이 포함되어 있어요.");
         }
       }
 
@@ -957,6 +1282,8 @@ function SettleContent() {
         requestedAt: serverTimestamp(),
         expenseIds: selectedIds,
         expenseSnapshots: snapshots,
+        adjustmentIds,
+        adjustmentSnapshots: preview.adjustments,
         transfers: preview.transfers,
         totalExpenseAmount: Math.round(preview.total),
         transferTotal: Math.round(preview.transferTotal),
@@ -971,6 +1298,13 @@ function SettleContent() {
           status: "requested",
           settlementRequestId: preview.requestId,
           settlementRequestedAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      }
+      for (const ref of adjustmentRefs) {
+        transaction.update(ref, {
+          status: "applied",
+          appliedToSettlementRequestId: preview.requestId,
           updatedAt: serverTimestamp(),
         });
       }
@@ -1038,7 +1372,7 @@ function SettleContent() {
 
   const handleCompleteSettlementRequest = async (request: SettlementRequest) => {
     if (!user || !tripId || !canManageSettlementRequest(request)) return;
-    if (!window.confirm("입금 확인 후 정산완료로 변경할까요?")) return;
+    if (!window.confirm("입금 확인 후 정산 완료로 변경할까요?")) return;
     const requestRef = doc(db, "trips", tripId, "settlementRequests", request.id);
     setRequestActionLoading(true);
     try {
@@ -1065,10 +1399,10 @@ function SettleContent() {
           });
         }
       });
-      toast.success("정산완료로 변경했어요.");
+      toast.success("정산 완료로 변경했어요.");
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : String(e);
-      toast.error(`정산완료 처리 실패: ${message}`);
+      toast.error(`정산 완료 처리 실패: ${message}`);
     } finally {
       setRequestActionLoading(false);
     }
@@ -1100,6 +1434,13 @@ function SettleContent() {
             status: "tentative",
             settlementRequestId: deleteField(),
             settlementRequestedAt: deleteField(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+        for (const adjustmentId of request.adjustmentIds) {
+          transaction.update(doc(db, "trips", tripId, "settlementAdjustments", adjustmentId), {
+            status: "active",
+            appliedToSettlementRequestId: null,
             updatedAt: serverTimestamp(),
           });
         }
@@ -1135,10 +1476,21 @@ function SettleContent() {
           <div className="h-10 w-10" aria-hidden="true" />
         )}
         <h1 className="text-base font-bold tracking-tight text-on-surface">
-          {isRequestsTab ? "정산 요청 관리" : isCategoryReportTab ? "지출 리포트" : "정산"}
+          {isRequestsTab ? "정산 내역" : isCategoryReportTab ? "지출 리포트" : isProductionReportTab ? "정산 미리보기" : "정산"}
         </h1>
         {isSubPage ? (
-          <div className="h-10 w-10" aria-hidden="true" />
+          isProductionReportTab && tripId ? (
+            <button
+              type="button"
+              onClick={() => router.push(`/settle?id=${tripId}&tab=requests`)}
+              aria-label="정산 요청 관리"
+              className="flex h-10 w-10 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary active:scale-95"
+            >
+              <MoreHorizontal className="h-5 w-5" strokeWidth={2.2} />
+            </button>
+          ) : (
+            <div className="h-10 w-10" aria-hidden="true" />
+          )
         ) : (
           <button
             type="button"
@@ -1179,6 +1531,48 @@ function SettleContent() {
                 loading={requestsLoading}
                 activeRequestId={requestIdParam}
                 onOpenRequest={(requestId) => router.replace(`/settle?id=${tripId}&tab=requests&request=${requestId}`)}
+              />
+            ) : isProductionReportTab ? (
+              <ProductionSettlementStatusView
+                report={productionSettlementReport}
+                loading={expensesLoading || adjustmentsLoading}
+                adjustments={activeSettlementAdjustments}
+                adjustmentsError={adjustmentsError}
+                creatingRequest={settlementConfirming}
+                onCreateRequest={() => handleCreateSettlementRequest(productionPreviewExpenses, activeSettlementAdjustments)}
+                onCreateAdjustment={async ({ fromUid, toUid, amount, memo }) => {
+                  if (!tripId || !user) return;
+                  await addDoc(collection(db, "trips", tripId, "settlementAdjustments"), {
+                    type: "direct_transfer",
+                    fromMemberId: fromUid,
+                    toMemberId: toUid,
+                    amount,
+                    currency: "KRW",
+                    memo,
+                    status: "active",
+                    createdBy: user.uid,
+                    createdAt: serverTimestamp(),
+                    updatedAt: serverTimestamp(),
+                    appliedToSettlementRequestId: null,
+                  });
+                }}
+                onUpdateAdjustment={async (adjustmentId, { fromUid, toUid, amount, memo }) => {
+                  if (!tripId) return;
+                  await updateDoc(doc(db, "trips", tripId, "settlementAdjustments", adjustmentId), {
+                    fromMemberId: fromUid,
+                    toMemberId: toUid,
+                    amount,
+                    memo,
+                    updatedAt: serverTimestamp(),
+                  });
+                }}
+                onVoidAdjustment={async (adjustmentId) => {
+                  if (!tripId) return;
+                  await updateDoc(doc(db, "trips", tripId, "settlementAdjustments", adjustmentId), {
+                    status: "voided",
+                    updatedAt: serverTimestamp(),
+                  });
+                }}
               />
             ) : isCategoryReportTab ? (
               <CategoryExpenseReport
@@ -1221,7 +1615,7 @@ function SettleContent() {
                   />
                   <button
                     type="button"
-                    onClick={() => router.push(`/settle?id=${tripId}&tab=requests`)}
+                    onClick={() => router.push(`/settle?id=${tripId}&tab=production`)}
                     className="glass-panel relative p-4 rounded-xl flex flex-col justify-between h-32 w-full text-left hover:bg-white/60 transition-colors active:scale-[0.98]"
                   >
                     <span className="absolute right-1.5 top-1 flex h-8 w-8 items-center justify-center rounded-full border-0 bg-transparent text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600 active:bg-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300">
@@ -1245,10 +1639,10 @@ function SettleContent() {
                     </div>
                     <div>
                       <p className="text-on-surface-variant text-xs mb-0.5">
-                        정산 현황
+                        정산 미리보기
                       </p>
                       <p className="text-sm font-bold text-on-surface">
-                        진행 중 {settlementRequests.filter((r) => r.status === "requested").length}건 · 완료 {settlementRequests.filter((r) => r.status === "completed").length}건
+                        미정산 {settlementStatusCounts.tentative}건 · 정산완료 {settlementStatusCounts.confirmed}건
                       </p>
                     </div>
                   </button>
@@ -1452,7 +1846,7 @@ function SettleContent() {
               </button>
               <button
                 type="button"
-                onClick={handleShareSettlementRequest}
+                onClick={openProductionPreviewForSelectedExpenses}
                 disabled={selectedExpenseIds.size === 0}
                 className="rounded-full bg-primary px-4 py-2 text-sm font-bold text-white shadow-sm shadow-primary/25 transition-transform active:scale-[0.98] disabled:cursor-not-allowed disabled:bg-primary/40 disabled:shadow-none"
               >
@@ -1522,7 +1916,7 @@ function SettleContent() {
         open={!!requestIdParam}
         request={selectedSettlementRequest}
         loading={requestsLoading}
-        canManage={canManageSettlementRequest(selectedSettlementRequest)}
+        canManage={isRequestsTab && canManageSettlementRequest(selectedSettlementRequest)}
         actionLoading={requestActionLoading}
         onOpenChange={(open) => {
           if (!open && tripId) router.replace(isRequestsTab ? `/settle?id=${tripId}&tab=requests` : `/settle?id=${tripId}`);
@@ -1569,11 +1963,63 @@ function SettlementRequestDetailDialog({
   onComplete: () => void;
   onCancel: () => void;
 }) {
+  const dialogTitle = request?.status === "completed" ? "정산 완료" : "정산 요청 상세";
+  const canShareRequest = !!request && request.status === "requested";
+  const handleShareRequest = async () => {
+    if (!request) return;
+    const title = `${request.title} 정산 요청`;
+    const shareMessage = buildSettlementRequestShareMessage(
+      request,
+      typeof window !== "undefined" ? window.location.href : ""
+    );
+    try {
+      if (
+        navigator.share &&
+        (!navigator.canShare ||
+          navigator.canShare({
+            title,
+            text: shareMessage,
+          }))
+      ) {
+        await navigator.share({
+          title,
+          text: shareMessage,
+        });
+        return;
+      }
+
+      await copyTextToClipboard(shareMessage);
+      toast.success("공유 기능을 사용할 수 없어 정산 요청 메시지를 복사했어요.");
+    } catch (e: unknown) {
+      if (e instanceof DOMException && e.name === "AbortError") return;
+      const message = e instanceof Error ? e.message : String(e);
+      try {
+        await copyTextToClipboard(shareMessage);
+        toast.success("공유창을 열지 못해서 정산 요청 메시지를 복사했어요.");
+      } catch {
+        toast.error(`공유 실패: ${message}`);
+      }
+    }
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[86vh] max-w-sm overflow-y-auto rounded-xl">
         <DialogHeader>
-          <DialogTitle>정산 요청 상세</DialogTitle>
+          <div className="flex items-center gap-2 pr-8">
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            {canShareRequest ? (
+              <button
+                type="button"
+                onClick={handleShareRequest}
+                disabled={actionLoading}
+                aria-label="공유하기"
+                className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container hover:text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Share2 className="h-4 w-4" />
+              </button>
+            ) : null}
+          </div>
         </DialogHeader>
         {loading ? (
           <div className="rounded-xl bg-white/70 px-3 py-6 text-center text-sm text-on-surface-variant">
@@ -1631,6 +2077,517 @@ function SettlementRequestSummary({
   );
 }
 
+function ProductionSettlementStatusView({
+  report,
+  loading,
+  adjustments,
+  adjustmentsError,
+  creatingRequest,
+  onCreateRequest,
+  onCreateAdjustment,
+  onUpdateAdjustment,
+  onVoidAdjustment,
+}: {
+  report: ProductionSettlementReport;
+  loading: boolean;
+  adjustments: ManualOffset[];
+  adjustmentsError: FirestoreError | null;
+  creatingRequest: boolean;
+  onCreateRequest: () => void;
+  onCreateAdjustment: (adjustment: { fromUid: string; toUid: string; amount: number; memo: string }) => Promise<void>;
+  onUpdateAdjustment: (
+    adjustmentId: string,
+    adjustment: { fromUid: string; toUid: string; amount: number; memo: string }
+  ) => Promise<void>;
+  onVoidAdjustment: (adjustmentId: string) => Promise<void>;
+}) {
+  const [offsetFromUid, setOffsetFromUid] = useState("");
+  const [offsetToUid, setOffsetToUid] = useState("");
+  const [offsetAmount, setOffsetAmount] = useState("");
+  const [offsetMemo, setOffsetMemo] = useState("");
+  const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
+  const [editFromUid, setEditFromUid] = useState("");
+  const [editToUid, setEditToUid] = useState("");
+  const [editAmount, setEditAmount] = useState("");
+  const [editMemo, setEditMemo] = useState("");
+  const [adjustmentSaving, setAdjustmentSaving] = useState(false);
+  const payerRows = report.memberRows
+    .filter((row) => row.expenseCount > 0)
+    .sort((a, b) => b.paidTotal - a.paidTotal);
+  const memberRows = [...report.memberRows].sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const activeAdjustments = adjustments.filter((adjustment) => adjustment.status === "active");
+  const appliedAdjustments = adjustments.filter((adjustment) => adjustment.status === "applied");
+  const memberNameByUid = new Map(report.memberRows.map((row) => [row.uid, row.name]));
+  const adjustedRows = report.memberRows
+    .map((row) => {
+      const offsetDelta = adjustments.reduce((sum, offset) => {
+        if (offset.fromUid === row.uid) return sum - offset.amount;
+        if (offset.toUid === row.uid) return sum + offset.amount;
+        return sum;
+      }, 0);
+      return {
+        ...row,
+        offsetDelta,
+        finalBalance: row.balance + offsetDelta,
+      };
+    })
+    .sort((a, b) => b.finalBalance - a.finalBalance);
+  const finalTransfers = buildOptimizedTransfers({
+    balances: new Map(adjustedRows.map((row) => [row.uid, row.finalBalance])),
+    memberNames: new Map(adjustedRows.map((row) => [row.uid, row.name])),
+  });
+  const hasAppliedAdjustments = appliedAdjustments.length > 0;
+  const adjustmentPermissionBlocked = isFirestorePermissionDenied(adjustmentsError);
+
+  const validateAdjustmentInput = (fromUid: string, toUid: string, amount: number) => {
+    if (!fromUid || !toUid) {
+      toast.error("보내는 사람과 받는 사람을 선택해 주세요.");
+      return false;
+    }
+    if (fromUid === toUid) {
+      toast.error("보내는 사람과 받는 사람이 같을 수 없어요.");
+      return false;
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      toast.error("금액을 1원 이상으로 입력해 주세요.");
+      return false;
+    }
+    return true;
+  };
+
+  const addOffset = async () => {
+    const amount = Math.round(Number(offsetAmount));
+    if (!validateAdjustmentInput(offsetFromUid, offsetToUid, amount)) return;
+    setAdjustmentSaving(true);
+    try {
+      await onCreateAdjustment({
+        fromUid: offsetFromUid,
+        toUid: offsetToUid,
+        amount,
+        memo: offsetMemo.trim(),
+      });
+      setOffsetAmount("");
+      setOffsetMemo("");
+      toast.success("추가 조정 항목을 추가했어요.");
+    } catch (e: unknown) {
+      const message = settlementAdjustmentErrorMessage(e);
+      toast.error(`추가 조정 항목 저장 실패: ${message}`);
+    } finally {
+      setAdjustmentSaving(false);
+    }
+  };
+
+  const startEditOffset = (adjustment: ManualOffset) => {
+    if (adjustment.status !== "active") return;
+    setEditingAdjustmentId(adjustment.id);
+    setEditFromUid(adjustment.fromUid);
+    setEditToUid(adjustment.toUid);
+    setEditAmount(String(adjustment.amount));
+    setEditMemo(adjustment.memo ?? "");
+  };
+
+  const cancelEditOffset = () => {
+    setEditingAdjustmentId(null);
+    setEditFromUid("");
+    setEditToUid("");
+    setEditAmount("");
+    setEditMemo("");
+  };
+
+  const saveOffsetEdit = async (adjustmentId: string) => {
+    const amount = Math.round(Number(editAmount));
+    if (!validateAdjustmentInput(editFromUid, editToUid, amount)) return;
+    setAdjustmentSaving(true);
+    try {
+      await onUpdateAdjustment(adjustmentId, {
+        fromUid: editFromUid,
+        toUid: editToUid,
+        amount,
+        memo: editMemo.trim(),
+      });
+      cancelEditOffset();
+      toast.success("추가 조정 항목을 수정했어요.");
+    } catch (e: unknown) {
+      const message = settlementAdjustmentErrorMessage(e);
+      toast.error(`추가 조정 항목 수정 실패: ${message}`);
+    } finally {
+      setAdjustmentSaving(false);
+    }
+  };
+
+  const voidOffset = async (adjustmentId: string) => {
+    setAdjustmentSaving(true);
+    try {
+      await onVoidAdjustment(adjustmentId);
+      if (editingAdjustmentId === adjustmentId) cancelEditOffset();
+      toast.success("추가 조정 항목을 취소했어요.");
+    } catch (e: unknown) {
+      const message = settlementAdjustmentErrorMessage(e);
+      toast.error(`추가 조정 항목 취소 실패: ${message}`);
+    } finally {
+      setAdjustmentSaving(false);
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="glass-panel rounded-xl p-6 text-sm text-on-surface-variant">
+        정산 미리보기를 불러오는 중...
+      </div>
+    );
+  }
+
+  if (report.expenseCount === 0) {
+    return (
+      <div className="glass-panel rounded-xl p-8 text-center">
+        <span className="material-symbols-outlined mb-2 text-4xl text-primary/70">receipt_long</span>
+        <p className="text-sm font-semibold text-on-surface">미정산 지출이 없어요</p>
+        <p className="mt-1 text-xs text-on-surface-variant">새 미정산 지출을 추가하면 미리보기가 표시됩니다.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      <section className="glass-elevated rounded-xl p-5">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
+            <p className="text-[11px] font-semibold text-primary">총 정산금액</p>
+            <p className="mt-1 text-xl font-extrabold text-on-surface">{formatKrw(report.total)}</p>
+          </div>
+          <div className="rounded-xl border border-outline-variant/70 bg-white/70 p-3">
+            <p className="text-[11px] font-semibold text-on-surface-variant">참여인원</p>
+            <p className="mt-1 text-xl font-extrabold text-on-surface">{report.memberRows.length}명</p>
+          </div>
+          <div className="rounded-xl border border-outline-variant/70 bg-white/70 p-3">
+            <p className="text-[11px] font-semibold text-on-surface-variant">총 결제건수</p>
+            <p className="mt-1 text-xl font-extrabold text-on-surface">{report.expenseCount}건</p>
+          </div>
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+            <p className="text-[11px] font-semibold text-amber-700">추가 조정</p>
+            <p className="mt-1 text-xl font-extrabold text-on-surface">{activeAdjustments.length}건</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-base font-bold text-on-surface">기본 정산 내역</h3>
+        <p className="text-xs leading-relaxed text-on-surface-variant">
+          결제자별 지출과 1인당 분담액을 기준으로 계산한 기본 정산입니다.
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-bold text-on-surface">결제 요약</h4>
+        <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+          <div className="grid grid-cols-[1.1fr_0.8fr_1fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
+            <span>멤버</span>
+            <span className="text-right">결제 건수</span>
+            <span className="text-right">결제 금액</span>
+            <span className="text-right">미확정(가환율)</span>
+          </div>
+          {payerRows.map((row) => (
+            <div key={row.uid} className="grid grid-cols-[1.1fr_0.8fr_1fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
+              <span className="truncate font-semibold text-on-surface">{row.name}</span>
+              <span className="text-right text-on-surface-variant">{row.expenseCount}건</span>
+              <span className="text-right text-on-surface-variant">{formatKrw(row.paidTotal)}</span>
+              <span className="text-right font-semibold text-amber-700">{row.estimatedCount}건</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h4 className="text-sm font-bold text-on-surface">멤버별 정산 내역</h4>
+        <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+          <div className="grid grid-cols-[1.1fr_1fr_1fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
+            <span>멤버</span>
+            <span className="text-right">결제 금액</span>
+            <span className="text-right">부담 금액</span>
+            <span className="text-right">결과</span>
+          </div>
+          {report.memberRows.map((row) => (
+            <div key={row.uid} className="grid grid-cols-[1.1fr_1fr_1fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
+              <span className="truncate font-semibold text-on-surface">{row.name}</span>
+              <span className="text-right text-on-surface-variant">{formatKrw(row.paidTotal)}</span>
+              <span className="text-right text-on-surface-variant">{formatKrw(row.shareTotal)}</span>
+              <span className={`text-right font-bold ${row.balance >= 0 ? "text-primary" : "text-rose-600"}`}>
+                {formatSignedKrw(row.balance)}
+              </span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs leading-relaxed text-on-surface-variant">
+          *결과 = 결제 금액 - 부담 금액 (양수는 받을 금액, 음수는 보낼 금액)
+        </p>
+      </section>
+
+      <section className="space-y-3">
+        <div>
+          <h3 className="text-base font-bold text-on-surface">추가 조정 항목</h3>
+          <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
+            기본 정산 외에 따로 주고받아야 할 금액을 추가할 수 있어요.
+          </p>
+        </div>
+        {adjustmentPermissionBlocked ? (
+          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+            로컬 Firestore emulator가 최신 rules를 반영하지 않아 추가 조정 항목을 저장할 수 없어요.
+            emulator를 재시작하거나 운영 rules를 배포한 뒤 다시 시도해 주세요.
+          </div>
+        ) : null}
+        <div className="rounded-xl border border-outline-variant/60 bg-white/75 p-3">
+          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_1.2fr_auto]">
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold text-on-surface-variant">보내는 사람</span>
+              <select
+                value={offsetFromUid}
+                onChange={(e) => setOffsetFromUid(e.target.value)}
+                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
+              >
+                <option value="">선택</option>
+                {memberRows.map((row) => (
+                  <option key={row.uid} value={row.uid}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold text-on-surface-variant">받는 사람</span>
+              <select
+                value={offsetToUid}
+                onChange={(e) => setOffsetToUid(e.target.value)}
+                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
+              >
+                <option value="">선택</option>
+                {memberRows.map((row) => (
+                  <option key={row.uid} value={row.uid}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold text-on-surface-variant">금액</span>
+              <input
+                type="number"
+                min="1"
+                inputMode="numeric"
+                value={offsetAmount}
+                onChange={(e) => setOffsetAmount(e.target.value)}
+                placeholder="50000"
+                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
+              />
+            </label>
+            <label className="space-y-1">
+              <span className="text-[11px] font-semibold text-on-surface-variant">메모</span>
+              <input
+                type="text"
+                value={offsetMemo}
+                onChange={(e) => setOffsetMemo(e.target.value)}
+                placeholder="현금 보정"
+                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
+              />
+            </label>
+            <Button
+              type="button"
+              className="h-10 self-end"
+              onClick={addOffset}
+              disabled={adjustmentSaving || adjustmentPermissionBlocked}
+            >
+              추가
+            </Button>
+          </div>
+          <div className="mt-3 space-y-2">
+            {adjustments.length > 0 ? (
+              adjustments.map((offset) => {
+                const isEditing = editingAdjustmentId === offset.id;
+                const isApplied = offset.status === "applied";
+                return (
+                  <div key={offset.id} className="rounded-lg bg-surface-container px-3 py-2">
+                    {isEditing ? (
+                      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_1.2fr_auto_auto]">
+                        <select
+                          value={editFromUid}
+                          onChange={(e) => setEditFromUid(e.target.value)}
+                          className="h-9 rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
+                        >
+                          {memberRows.map((row) => (
+                            <option key={row.uid} value={row.uid}>{row.name}</option>
+                          ))}
+                        </select>
+                        <select
+                          value={editToUid}
+                          onChange={(e) => setEditToUid(e.target.value)}
+                          className="h-9 rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
+                        >
+                          {memberRows.map((row) => (
+                            <option key={row.uid} value={row.uid}>{row.name}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          min="1"
+                          inputMode="numeric"
+                          value={editAmount}
+                          onChange={(e) => setEditAmount(e.target.value)}
+                          className="h-9 rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
+                        />
+                        <input
+                          type="text"
+                          value={editMemo}
+                          onChange={(e) => setEditMemo(e.target.value)}
+                          className="h-9 rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
+                        />
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => saveOffsetEdit(offset.id)}
+                          disabled={adjustmentSaving || adjustmentPermissionBlocked}
+                        >
+                          저장
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={cancelEditOffset}
+                          disabled={adjustmentSaving}
+                        >
+                          취소
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex min-w-0 flex-wrap items-center gap-2">
+                            <p className="min-w-0 truncate text-sm font-semibold text-on-surface">
+                              {memberNameByUid.get(offset.fromUid) ?? "이름 없음"}
+                              <span className="mx-1.5 text-on-surface-variant">→</span>
+                              {memberNameByUid.get(offset.toUid) ?? "이름 없음"}
+                            </p>
+                            {isApplied ? (
+                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
+                                정산 반영됨
+                              </span>
+                            ) : null}
+                          </div>
+                          {offset.memo ? (
+                            <p className="mt-0.5 truncate text-xs text-on-surface-variant">{offset.memo}</p>
+                          ) : null}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <p className="text-sm font-bold text-primary">{formatKrw(offset.amount)}</p>
+                          <button
+                            type="button"
+                            onClick={() => startEditOffset(offset)}
+                            disabled={adjustmentSaving || isApplied || adjustmentPermissionBlocked}
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-outline-variant/30 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="추가 조정 항목 수정"
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
+                            aria-label="추가 조정 항목 삭제"
+                            onClick={() => voidOffset(offset.id)}
+                            disabled={adjustmentSaving || isApplied || adjustmentPermissionBlocked}
+                            className="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-outline-variant/30 disabled:cursor-not-allowed disabled:opacity-40"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            ) : (
+              <p className="text-sm text-on-surface-variant">추가된 조정 항목이 없어요.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="space-y-3">
+        <h3 className="text-base font-bold text-on-surface">🧾 최종 정산 결과</h3>
+        <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+          <div className="grid grid-cols-[1fr_1fr_1fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
+            <span>멤버</span>
+            <span className="text-right">기본 정산</span>
+            <span className="text-right">추가 조정</span>
+            <span className="text-right">최종 결과</span>
+          </div>
+          {adjustedRows.map((row) => (
+            <div key={row.uid} className="grid grid-cols-[1fr_1fr_1fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
+              <span className="truncate font-semibold text-on-surface">{row.name}</span>
+              <span className={`text-right font-medium ${row.balance >= 0 ? "text-primary" : "text-rose-600"}`}>
+                {formatSignedKrw(row.balance)}
+              </span>
+              <span className={`text-right font-medium ${row.offsetDelta >= 0 ? "text-primary" : "text-rose-600"}`}>
+                {formatSignedKrw(row.offsetDelta)}
+              </span>
+              <span className={`text-right font-bold ${row.finalBalance >= 0 ? "text-primary" : "text-rose-600"}`}>
+                {formatSignedKrw(row.finalBalance)}
+              </span>
+            </div>
+          ))}
+        </div>
+
+        <h4 className="text-sm font-bold text-on-surface">💸 송금해야 할 금액</h4>
+        {finalTransfers.length > 0 ? (
+          <div className="space-y-2">
+            {finalTransfers.map((transfer, idx) => (
+              <article
+                key={`${transfer.fromUid}-${transfer.toUid}-${idx}`}
+                className="rounded-xl border border-outline-variant/60 bg-white/75 p-3"
+              >
+                <div className="flex items-center justify-between gap-3">
+                  <p className="min-w-0 truncate text-sm font-semibold text-on-surface">
+                    {transfer.fromName}
+                    <span className="mx-1.5 text-on-surface-variant">→</span>
+                    {transfer.toName}
+                  </p>
+                  <div className="flex shrink-0 items-center gap-2">
+                    {hasAppliedAdjustments ? (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                        송금 전
+                      </span>
+                    ) : null}
+                    <p className="text-sm font-extrabold text-primary">{formatKrw(transfer.amount)}</p>
+                  </div>
+                </div>
+                {hasAppliedAdjustments ? (
+                  <div className="mt-3 flex justify-end gap-2">
+                    <Button type="button" size="sm" variant="outline" disabled>
+                      보냈어요
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" disabled>
+                      받았어요
+                    </Button>
+                  </div>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-outline-variant/60 bg-white/70 p-4 text-sm text-on-surface-variant">
+            최종 송금할 금액이 없어요.
+          </div>
+        )}
+      </section>
+
+      <section className="space-y-3 rounded-xl border border-outline-variant/60 bg-white/75 p-4">
+        <div>
+          <h3 className="text-base font-bold text-on-surface">정산 요청</h3>
+          <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
+            송금해야 할 금액을 확인한 뒤 정산 요청을 만들거나 기존 요청 상태를 확인합니다.
+          </p>
+        </div>
+        <Button type="button" className="w-full" onClick={onCreateRequest} disabled={report.expenseCount === 0 || creatingRequest}>
+          {creatingRequest ? "생성 중..." : "정산 요청 생성"}
+        </Button>
+      </section>
+    </div>
+  );
+}
+
 function SettlementRequestDetailView({
   request,
   canManage,
@@ -1644,42 +2601,10 @@ function SettlementRequestDetailView({
   onComplete: () => void;
   onCancel: () => void;
 }) {
+  const [expandedDetail, setExpandedDetail] = useState<"expenses" | "adjustments" | null>(null);
+  const expensesExpanded = expandedDetail === "expenses";
+  const adjustmentsExpanded = expandedDetail === "adjustments";
   const receiverAccounts = Array.from(new Map(request.transfers.map((transfer) => [transfer.toUid, transfer])).values());
-  const handleShareRequest = async () => {
-    if (!request.shareMessage) {
-      toast.error("저장된 공유 메시지가 없어요.");
-      return;
-    }
-    const title = `${request.title} 정산 요청`;
-    try {
-      if (
-        navigator.share &&
-        (!navigator.canShare ||
-          navigator.canShare({
-            title,
-            text: request.shareMessage,
-          }))
-      ) {
-        await navigator.share({
-          title,
-          text: request.shareMessage,
-        });
-        return;
-      }
-
-      await copyTextToClipboard(request.shareMessage);
-      toast.success("공유 기능을 사용할 수 없어 정산 요청 메시지를 복사했어요.");
-    } catch (e: unknown) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
-      const message = e instanceof Error ? e.message : String(e);
-      try {
-        await copyTextToClipboard(request.shareMessage);
-        toast.success("공유창을 열지 못해서 정산 요청 메시지를 복사했어요.");
-      } catch {
-        toast.error(`공유 실패: ${message}`);
-      }
-    }
-  };
 
   return (
     <div className="space-y-5 py-2">
@@ -1693,7 +2618,8 @@ function SettlementRequestDetailView({
             </p>
             <h3 className="mt-1 truncate text-sm font-bold text-on-surface">{request.title}</h3>
             <p className="mt-1 text-xs text-on-surface-variant">
-              {request.requestedByName} 요청 · 총 지출 ({request.expenseIds.length}건)
+              {request.requestedByName} 요청 · 지출 {request.expenseIds.length}건
+              {request.adjustmentIds.length > 0 ? ` · 추가 조정 ${request.adjustmentIds.length}건` : ""}
             </p>
             <p className="mt-1 text-xs text-on-surface-variant">
               요청일 {formatRequestDate(request.requestedAt)}
@@ -1703,50 +2629,108 @@ function SettlementRequestDetailView({
           </div>
           <p className="shrink-0 text-base font-bold text-on-surface">{formatKrw(request.totalExpenseAmount)}</p>
         </div>
-      </section>
-
-      <section className="space-y-2">
-        <h4 className="text-sm font-bold text-on-surface">📌 지출 내역</h4>
-        {request.expenseSnapshots.map((expense, idx) => (
-          <article key={expense.expenseId} className="rounded-xl border border-outline-variant/60 bg-white/70 p-3">
-            <div className="flex items-start justify-between gap-3">
-              <p className="min-w-0 text-sm font-semibold leading-snug text-on-surface">
-                {idx + 1}. {expense.title}
-              </p>
-              <p className="shrink-0 text-sm font-bold text-on-surface">{formatKrw(expense.amount)}</p>
-            </div>
-            <div className="mt-3">
-              <p className="mb-1.5 text-[11px] font-semibold text-on-surface-variant">정산 인원</p>
-              <div className="flex flex-wrap gap-1.5">
-                {expense.participantNames.length > 1 ? (
-                  expense.participantNames.map((name, nameIdx) => (
-                    <span
-                      key={`${expense.expenseId}-${name}-${nameIdx}`}
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        expense.participantUids[nameIdx] === expense.payerUid
-                          ? "bg-primary/10 font-semibold text-primary"
-                          : "border border-outline-variant/70 bg-surface-container text-on-surface-variant"
-                      }`}
-                    >
-                      {name}
-                    </span>
+        <div className="mt-3 space-y-2">
+          <div
+            className={`rounded-lg border bg-white/60 transition-colors ${
+              expensesExpanded ? "border-primary/40 bg-primary/5" : "border-primary/10"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setExpandedDetail((current) => (current === "expenses" ? null : "expenses"))}
+              aria-expanded={expensesExpanded}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-on-surface-variant">📌 지출 내역</p>
+                <p className="mt-0.5 text-sm font-bold text-on-surface">
+                  {request.expenseIds.length}건 · {formatKrw(request.totalExpenseAmount)}
+                </p>
+              </div>
+              <span className="material-symbols-outlined shrink-0 text-[18px] text-on-surface-variant">
+                {expensesExpanded ? "expand_less" : "expand_more"}
+              </span>
+            </button>
+            {expensesExpanded ? (
+              <div className="space-y-1.5 border-t border-outline-variant/60 px-3 py-2">
+                {request.expenseSnapshots.length > 0 ? (
+                request.expenseSnapshots.map((expense, idx) => (
+                  <article key={expense.expenseId} className="rounded-lg border border-outline-variant/50 bg-white/80 px-3 py-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-on-surface">
+                        {idx + 1}. {expense.title}
+                      </p>
+                        <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">
+                          결제: {expense.payerName} · 정산인원: {expense.participantNames.length}명
+                        </p>
+                      </div>
+                      <p className="shrink-0 text-sm font-bold text-on-surface">{formatKrw(expense.amount)}</p>
+                    </div>
+                  </article>
+                ))
+              ) : (
+                <p className="rounded-lg border border-outline-variant/50 bg-white/80 px-3 py-2 text-xs text-on-surface-variant">
+                  저장된 지출 세부 내역이 없어요.
+                </p>
+              )}
+              </div>
+            ) : null}
+          </div>
+          <div
+            className={`rounded-lg border bg-white/60 transition-colors ${
+              adjustmentsExpanded ? "border-primary/40 bg-primary/5" : "border-primary/10"
+            }`}
+          >
+            <button
+              type="button"
+              onClick={() => setExpandedDetail((current) => (current === "adjustments" ? null : "adjustments"))}
+              aria-expanded={adjustmentsExpanded}
+              className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left"
+            >
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold text-on-surface-variant">➕ 추가 조정</p>
+                <p className="mt-0.5 text-sm font-bold text-on-surface">
+                  {request.adjustmentIds.length}건
+                </p>
+              </div>
+              <span className="material-symbols-outlined shrink-0 text-[18px] text-on-surface-variant">
+                {adjustmentsExpanded ? "expand_less" : "expand_more"}
+              </span>
+            </button>
+            {adjustmentsExpanded ? (
+              <div className="space-y-1.5 border-t border-outline-variant/60 px-3 py-2">
+                {request.adjustmentSnapshots.length > 0 ? (
+                  request.adjustmentSnapshots.map((adjustment) => (
+                    <article key={adjustment.adjustmentId} className="rounded-lg border border-outline-variant/50 bg-white/80 px-3 py-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-on-surface">
+                            {adjustment.fromName}
+                            <span className="mx-1.5 text-on-surface-variant">→</span>
+                            {adjustment.toName}
+                          </p>
+                          {adjustment.memo ? (
+                            <p className="mt-0.5 truncate text-[11px] text-on-surface-variant">{adjustment.memo}</p>
+                          ) : null}
+                        </div>
+                        <p className="shrink-0 text-sm font-bold text-primary">{formatKrw(adjustment.amount)}</p>
+                      </div>
+                    </article>
                   ))
                 ) : (
-                  <span className="inline-flex rounded-full border border-outline-variant/70 bg-surface-container px-2.5 py-1 text-[11px] font-semibold text-on-surface-variant">
-                    정산 없음
-                  </span>
+                  <p className="rounded-lg border border-outline-variant/50 bg-white/80 px-3 py-2 text-xs text-on-surface-variant">
+                    추가 조정 항목이 없어요.
+                  </p>
                 )}
               </div>
+            ) : null}
             </div>
-          </article>
-        ))}
+        </div>
       </section>
 
       <section className="space-y-2 rounded-xl border border-outline-variant/60 bg-white/70 p-3">
-        <h4 className="text-sm font-bold text-on-surface">💸 상계 후 보낼 금액</h4>
-        <p className="text-xs leading-relaxed text-on-surface-variant">
-          서로 주고받을 금액을 상계한 뒤, 실제로 송금할 금액입니다.
-        </p>
+        <h4 className="text-sm font-bold text-on-surface">💸 최종 송금 금액</h4>
         <div className="space-y-1.5">
           {request.transfers.length > 0 ? (
             request.transfers.map((transfer, idx) => (
@@ -1778,24 +2762,16 @@ function SettlementRequestDetailView({
         </div>
       </section>
 
-      {request.status === "requested" && (canManage || request.shareMessage) && (
+      {request.status === "requested" && canManage && (
         <div className="space-y-2 pt-2">
-          {request.shareMessage && (
-            <Button type="button" variant="outline" className="w-full gap-1.5" onClick={handleShareRequest} disabled={actionLoading}>
-              <Share2 className="h-4 w-4" />
-              공유하기
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" className="flex-1" onClick={onCancel} disabled={actionLoading}>
+              취소하기
             </Button>
-          )}
-          {canManage && (
-            <div className="flex gap-2">
-              <Button type="button" variant="outline" className="flex-1" onClick={onCancel} disabled={actionLoading}>
-                취소하기
-              </Button>
-              <Button type="button" className="flex-1" onClick={onComplete} disabled={actionLoading}>
-                정산완료
-              </Button>
-            </div>
-          )}
+            <Button type="button" className="flex-1" onClick={onComplete} disabled={actionLoading}>
+              정산 완료
+            </Button>
+          </div>
         </div>
       )}
     </div>
@@ -1859,7 +2835,8 @@ function SettlementRequestList({
                 <div className="min-w-0">
                   <p className="truncate text-sm font-semibold text-on-surface">{request.title}</p>
                   <p className="mt-1 text-xs text-on-surface-variant">
-                    {request.requestedByName} 요청 · 지출 {request.expenseIds.length}건 · 송금 {formatKrw(request.transferTotal)}
+                    {request.requestedByName} 요청 · 지출 {request.expenseIds.length}건
+                    {request.adjustmentIds.length > 0 ? ` · 조정 ${request.adjustmentIds.length}건` : ""}
                   </p>
                   <p className="mt-0.5 text-[11px] text-on-surface-variant/80">
                     요청일 {formatRequestDate(request.requestedAt)}
@@ -1986,8 +2963,7 @@ function SettlementSharePreview({ preview }: { preview: SettlementPreviewData })
       </section>
 
       <section className="space-y-2 rounded-xl border border-outline-variant/60 bg-white/70 p-3">
-        <h4 className="text-sm font-bold text-on-surface">💸 상계 후 보낼 금액</h4>
-        <p className="text-xs leading-relaxed text-on-surface-variant">서로 주고받을 금액을 상계한 뒤, 실제로 송금할 금액입니다.</p>
+        <h4 className="text-sm font-bold text-on-surface">💸 최종 송금 금액</h4>
         <div className="space-y-1.5">
           {preview.transfers.length > 0 ? (
             preview.transfers.map((transfer, idx) => (

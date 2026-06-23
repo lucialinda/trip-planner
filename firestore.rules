@@ -373,6 +373,113 @@ service cloud.firestore {
           || isTripMember(tripId);
       }
 
+      match /settlementAdjustments/{adjustmentId} {
+        function hasValidSettlementAdjustmentShape() {
+          return request.resource.data.keys().hasOnly([
+              'type',
+              'fromMemberId',
+              'toMemberId',
+              'amount',
+              'currency',
+              'memo',
+              'status',
+              'createdBy',
+              'createdAt',
+              'updatedAt',
+              'appliedToSettlementRequestId'
+            ])
+            && request.resource.data.type == 'direct_transfer'
+            && request.resource.data.fromMemberId in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+            && request.resource.data.toMemberId in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+            && request.resource.data.fromMemberId != request.resource.data.toMemberId
+            && request.resource.data.amount is number
+            && request.resource.data.amount > 0
+            && request.resource.data.currency == 'KRW'
+            && request.resource.data.status in ['active', 'applied', 'voided']
+            && request.resource.data.createdBy in get(/databases/$(database)/documents/trips/$(tripId)).data.memberUids
+            && request.resource.data.createdAt is timestamp
+            && request.resource.data.updatedAt is timestamp
+            && (
+              !('memo' in request.resource.data)
+              || request.resource.data.memo is string
+            )
+            && (
+              request.resource.data.appliedToSettlementRequestId == null
+              || request.resource.data.appliedToSettlementRequestId is string
+            );
+        }
+
+        function preservesSettlementAdjustmentIdentityFields() {
+          return request.resource.data.type == resource.data.type
+            && request.resource.data.currency == resource.data.currency
+            && request.resource.data.createdBy == resource.data.createdBy
+            && request.resource.data.createdAt == resource.data.createdAt;
+        }
+
+        allow read: if isTripMember(tripId) || isAdmin();
+        allow create: if isTripMember(tripId)
+          && hasValidSettlementAdjustmentShape()
+          && request.resource.data.status == 'active'
+          && request.resource.data.createdBy == request.auth.uid
+          && request.resource.data.appliedToSettlementRequestId == null;
+        allow update: if (isTripMember(tripId) || isAdmin())
+          && hasValidSettlementAdjustmentShape()
+          && preservesSettlementAdjustmentIdentityFields()
+          && (
+            (
+              resource.data.status == 'active'
+              && (
+                (
+                  request.resource.data.status == 'active'
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'fromMemberId',
+                    'toMemberId',
+                    'amount',
+                    'memo',
+                    'updatedAt'
+                  ])
+                  && (resource.data.createdBy == request.auth.uid || isAdmin())
+                )
+                || (
+                  request.resource.data.status == 'voided'
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+                  && request.resource.data.appliedToSettlementRequestId == resource.data.appliedToSettlementRequestId
+                  && (resource.data.createdBy == request.auth.uid || isAdmin())
+                )
+                || (
+                  request.resource.data.status == 'applied'
+                  && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                    'status',
+                    'appliedToSettlementRequestId',
+                    'updatedAt'
+                  ])
+                  && request.resource.data.appliedToSettlementRequestId is string
+                  && existsAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.appliedToSettlementRequestId))
+                  && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.appliedToSettlementRequestId)).data.status == 'requested'
+                  && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.appliedToSettlementRequestId)).data.requestedByUid == request.auth.uid
+                  && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(request.resource.data.appliedToSettlementRequestId)).data.adjustmentIds.hasAny([adjustmentId])
+                )
+              )
+            )
+            || (
+              resource.data.status == 'applied'
+              && request.resource.data.status == 'active'
+              && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+                'status',
+                'appliedToSettlementRequestId',
+                'updatedAt'
+              ])
+              && resource.data.appliedToSettlementRequestId is string
+              && request.resource.data.appliedToSettlementRequestId == null
+              && existsAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.appliedToSettlementRequestId))
+              && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.appliedToSettlementRequestId)).data.status == 'cancelled'
+              && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.appliedToSettlementRequestId)).data.cancelledByUid == request.auth.uid
+              && getAfter(/databases/$(database)/documents/trips/$(tripId)/settlementRequests/$(resource.data.appliedToSettlementRequestId)).data.adjustmentIds.hasAny([adjustmentId])
+            )
+          );
+        allow delete: if false;
+      }
+
       match /settlementRequests/{requestId} {
         function hasValidSettlementRequestShape() {
           return request.resource.data.keys().hasOnly([
@@ -391,6 +498,8 @@ service cloud.firestore {
               'cancelReason',
               'expenseIds',
               'expenseSnapshots',
+              'adjustmentIds',
+              'adjustmentSnapshots',
               'transfers',
               'totalExpenseAmount',
               'transferTotal',
@@ -410,6 +519,14 @@ service cloud.firestore {
             && request.resource.data.expenseIds.size() <= 50
             && request.resource.data.expenseSnapshots is list
             && request.resource.data.expenseSnapshots.size() == request.resource.data.expenseIds.size()
+            && (!('adjustmentIds' in request.resource.data) || request.resource.data.adjustmentIds is list)
+            && (!('adjustmentIds' in request.resource.data) || request.resource.data.adjustmentIds.size() <= 50)
+            && (!('adjustmentSnapshots' in request.resource.data) || request.resource.data.adjustmentSnapshots is list)
+            && (
+              !('adjustmentIds' in request.resource.data)
+              || !('adjustmentSnapshots' in request.resource.data)
+              || request.resource.data.adjustmentSnapshots.size() == request.resource.data.adjustmentIds.size()
+            )
             && request.resource.data.transfers is list
             && request.resource.data.transfers.size() <= 50
             && request.resource.data.totalExpenseAmount is number
@@ -437,6 +554,8 @@ service cloud.firestore {
             && request.resource.data.requestedAt == resource.data.requestedAt
             && request.resource.data.expenseIds == resource.data.expenseIds
             && request.resource.data.expenseSnapshots == resource.data.expenseSnapshots
+            && (!('adjustmentIds' in resource.data) || request.resource.data.adjustmentIds == resource.data.adjustmentIds)
+            && (!('adjustmentSnapshots' in resource.data) || request.resource.data.adjustmentSnapshots == resource.data.adjustmentSnapshots)
             && request.resource.data.transfers == resource.data.transfers
             && request.resource.data.totalExpenseAmount == resource.data.totalExpenseAmount
             && request.resource.data.transferTotal == resource.data.transferTotal

@@ -30,6 +30,9 @@ trips/{tripId}/votes/{voteId}
 trips/{tripId}/expenses/{expId}
   description, amount, paidBy, paidByUid, createdAt
 
+trips/{tripId}/settlementAdjustments/{adjustmentId}
+  type, fromMemberId, toMemberId, amount, currency, memo, status, createdBy, createdAt, updatedAt, appliedToSettlementRequestId
+
 trips/{tripId}/messages/{msgId}
   text, uid, displayName, createdAt
 
