@@ -41,7 +41,7 @@ import {
   isForeignCurrency,
 } from "@/lib/expenses";
 import { isAdminUid } from "@/lib/admin";
-import { Check, Circle, CircleCheck, Edit2, MoreHorizontal, Share2, Trash2 } from "lucide-react";
+import { Check, Circle, CircleCheck, Edit2, MoreHorizontal, Plus, Share2, Trash2 } from "lucide-react";
 
 // ---------- 트립 데이터 (settle에서 필요한 최소 필드) ----------
 
@@ -190,7 +190,6 @@ const REQUEST_FILTER_OPTIONS: { key: SettlementRequestFilter; label: string }[] 
   { key: "all", label: "전체" },
   { key: "requested", label: "요청" },
   { key: "completed", label: "완료" },
-  { key: "cancelled", label: "취소" },
 ];
 const CATEGORY_ORDER = Object.keys(CATEGORY_META) as ExpenseCategory[];
 const CATEGORY_EMOJI: Record<ExpenseCategory, string> = {
@@ -286,6 +285,15 @@ function formatRequestDate(date: Date | undefined): string {
 function formatSignedKrw(amount: number): string {
   if (Math.abs(amount) <= 1) return formatKrw(0);
   return `${amount > 0 ? "+" : "-"}${formatKrw(Math.abs(amount))}`;
+}
+
+function formatKrwValue(amount: number): string {
+  return Math.round(amount).toLocaleString("ko-KR");
+}
+
+function formatSignedKrwValue(amount: number): string {
+  if (Math.abs(amount) <= 1) return formatKrwValue(0);
+  return `${amount > 0 ? "+" : "-"}${formatKrwValue(Math.abs(amount))}`;
 }
 
 function getRequestStatusDate(request: SettlementRequest): Date | undefined {
@@ -2105,6 +2113,9 @@ function ProductionSettlementStatusView({
   const [offsetToUid, setOffsetToUid] = useState("");
   const [offsetAmount, setOffsetAmount] = useState("");
   const [offsetMemo, setOffsetMemo] = useState("");
+  const [showAdjustmentForm, setShowAdjustmentForm] = useState(false);
+  const [detailsExpanded, setDetailsExpanded] = useState(false);
+  const [adjustmentMenuOpenId, setAdjustmentMenuOpenId] = useState<string | null>(null);
   const [editingAdjustmentId, setEditingAdjustmentId] = useState<string | null>(null);
   const [editFromUid, setEditFromUid] = useState("");
   const [editToUid, setEditToUid] = useState("");
@@ -2137,6 +2148,8 @@ function ProductionSettlementStatusView({
     memberNames: new Map(adjustedRows.map((row) => [row.uid, row.name])),
   });
   const hasAppliedAdjustments = appliedAdjustments.length > 0;
+  const hasActiveAdjustments = activeAdjustments.length > 0;
+  const hasFinalBalanceDifference = adjustedRows.some((row) => Math.round(row.offsetDelta) !== 0);
   const adjustmentPermissionBlocked = isFirestorePermissionDenied(adjustmentsError);
 
   const validateAdjustmentInput = (fromUid: string, toUid: string, amount: number) => {
@@ -2168,6 +2181,9 @@ function ProductionSettlementStatusView({
       });
       setOffsetAmount("");
       setOffsetMemo("");
+      setOffsetFromUid("");
+      setOffsetToUid("");
+      setShowAdjustmentForm(false);
       toast.success("추가 조정 항목을 추가했어요.");
     } catch (e: unknown) {
       const message = settlementAdjustmentErrorMessage(e);
@@ -2177,8 +2193,17 @@ function ProductionSettlementStatusView({
     }
   };
 
+  const cancelAddOffset = () => {
+    setOffsetFromUid("");
+    setOffsetToUid("");
+    setOffsetAmount("");
+    setOffsetMemo("");
+    setShowAdjustmentForm(false);
+  };
+
   const startEditOffset = (adjustment: ManualOffset) => {
     if (adjustment.status !== "active") return;
+    setAdjustmentMenuOpenId(null);
     setEditingAdjustmentId(adjustment.id);
     setEditFromUid(adjustment.fromUid);
     setEditToUid(adjustment.toUid);
@@ -2216,14 +2241,16 @@ function ProductionSettlementStatusView({
   };
 
   const voidOffset = async (adjustmentId: string) => {
+    if (!window.confirm("별도 조정 항목을 삭제할까요?")) return;
+    setAdjustmentMenuOpenId(null);
     setAdjustmentSaving(true);
     try {
       await onVoidAdjustment(adjustmentId);
       if (editingAdjustmentId === adjustmentId) cancelEditOffset();
-      toast.success("추가 조정 항목을 취소했어요.");
+      toast.success("별도 조정 항목을 삭제했어요.");
     } catch (e: unknown) {
       const message = settlementAdjustmentErrorMessage(e);
-      toast.error(`추가 조정 항목 취소 실패: ${message}`);
+      toast.error(`별도 조정 항목 삭제 실패: ${message}`);
     } finally {
       setAdjustmentSaving(false);
     }
@@ -2248,101 +2275,320 @@ function ProductionSettlementStatusView({
   }
 
   return (
-    <div className="space-y-5">
-      <section className="glass-elevated rounded-xl p-5">
-        <div className="grid grid-cols-2 gap-3">
+    <div className="space-y-4">
+      <section className="glass-elevated rounded-xl p-4">
+        <div className="grid grid-cols-2 gap-2.5">
           <div className="rounded-xl border border-primary/15 bg-primary/5 p-3">
-            <p className="text-[11px] font-semibold text-primary">총 정산금액</p>
+            <p className="text-[11px] font-semibold text-primary">총 지출</p>
             <p className="mt-1 text-xl font-extrabold text-on-surface">{formatKrw(report.total)}</p>
           </div>
           <div className="rounded-xl border border-outline-variant/70 bg-white/70 p-3">
-            <p className="text-[11px] font-semibold text-on-surface-variant">참여인원</p>
+            <p className="text-[11px] font-semibold text-on-surface-variant">참여 멤버</p>
             <p className="mt-1 text-xl font-extrabold text-on-surface">{report.memberRows.length}명</p>
           </div>
           <div className="rounded-xl border border-outline-variant/70 bg-white/70 p-3">
-            <p className="text-[11px] font-semibold text-on-surface-variant">총 결제건수</p>
+            <p className="text-[11px] font-semibold text-on-surface-variant">정산 대상</p>
             <p className="mt-1 text-xl font-extrabold text-on-surface">{report.expenseCount}건</p>
           </div>
-          <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <p className="text-[11px] font-semibold text-amber-700">추가 조정</p>
-            <p className="mt-1 text-xl font-extrabold text-on-surface">{activeAdjustments.length}건</p>
-          </div>
-        </div>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-base font-bold text-on-surface">기본 정산 내역</h3>
-        <p className="text-xs leading-relaxed text-on-surface-variant">
-          결제자별 지출과 1인당 분담액을 기준으로 계산한 기본 정산입니다.
-        </p>
-      </section>
-
-      <section className="space-y-3">
-        <h4 className="text-sm font-bold text-on-surface">결제 요약</h4>
-        <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
-          <div className="grid grid-cols-[1.1fr_0.8fr_1fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
-            <span>멤버</span>
-            <span className="text-right">결제 건수</span>
-            <span className="text-right">결제 금액</span>
-            <span className="text-right">미확정(가환율)</span>
-          </div>
-          {payerRows.map((row) => (
-            <div key={row.uid} className="grid grid-cols-[1.1fr_0.8fr_1fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
-              <span className="truncate font-semibold text-on-surface">{row.name}</span>
-              <span className="text-right text-on-surface-variant">{row.expenseCount}건</span>
-              <span className="text-right text-on-surface-variant">{formatKrw(row.paidTotal)}</span>
-              <span className="text-right font-semibold text-amber-700">{row.estimatedCount}건</span>
+          {hasActiveAdjustments ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="text-[11px] font-semibold text-amber-700">별도 조정</p>
+              <p className="mt-1 text-xl font-extrabold text-on-surface">{activeAdjustments.length}건</p>
             </div>
-          ))}
+          ) : null}
         </div>
       </section>
 
       <section className="space-y-3">
-        <h4 className="text-sm font-bold text-on-surface">멤버별 정산 내역</h4>
-        <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
-          <div className="grid grid-cols-[1.1fr_1fr_1fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
-            <span>멤버</span>
-            <span className="text-right">결제 금액</span>
-            <span className="text-right">부담 금액</span>
-            <span className="text-right">결과</span>
+        <div className="flex items-center justify-between gap-3">
+          <h3 className="text-base font-bold text-on-surface">💸 최종 송금 안내</h3>
+          {hasAppliedAdjustments ? (
+            <span className="rounded-full bg-primary/10 px-2.5 py-1 text-xs font-bold text-primary">확정됨</span>
+          ) : null}
+        </div>
+        <div className="overflow-hidden rounded-2xl border border-outline-variant/60 bg-white/75">
+          <div className="space-y-2 p-3">
+            {finalTransfers.length > 0 ? (
+              finalTransfers.map((transfer, idx) => (
+                <article
+                  key={`${transfer.fromUid}-${transfer.toUid}-${idx}`}
+                  className="rounded-xl border border-outline-variant/60 bg-white p-3"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-sm font-semibold text-on-surface">
+                      {transfer.fromName}
+                      <span className="mx-1.5 text-on-surface-variant">→</span>
+                      {transfer.toName}
+                    </p>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {hasAppliedAdjustments ? (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
+                          송금 전
+                        </span>
+                      ) : null}
+                      <p className="text-base font-extrabold text-primary">{formatKrw(transfer.amount)}</p>
+                    </div>
+                  </div>
+                  {hasAppliedAdjustments ? (
+                    <div className="mt-3 flex justify-end gap-2">
+                      <Button type="button" size="sm" variant="outline" disabled>
+                        보냈어요
+                      </Button>
+                      <Button type="button" size="sm" variant="outline" disabled>
+                        받았어요
+                      </Button>
+                    </div>
+                  ) : null}
+                </article>
+              ))
+            ) : (
+              <div className="rounded-xl border border-outline-variant/60 bg-white p-4 text-sm text-on-surface-variant">
+                최종 송금할 금액이 없어요.
+              </div>
+            )}
           </div>
-          {report.memberRows.map((row) => (
-            <div key={row.uid} className="grid grid-cols-[1.1fr_1fr_1fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
-              <span className="truncate font-semibold text-on-surface">{row.name}</span>
-              <span className="text-right text-on-surface-variant">{formatKrw(row.paidTotal)}</span>
-              <span className="text-right text-on-surface-variant">{formatKrw(row.shareTotal)}</span>
-              <span className={`text-right font-bold ${row.balance >= 0 ? "text-primary" : "text-rose-600"}`}>
-                {formatSignedKrw(row.balance)}
-              </span>
-            </div>
-          ))}
+          <div className="border-t border-outline-variant/60 bg-surface-container/50 p-3">
+            <p className="mb-2 text-xs font-medium text-on-surface-variant">
+              총 {finalTransfers.length}건의 송금이 필요해요
+            </p>
+            <Button
+              type="button"
+              variant={hasAppliedAdjustments ? "outline" : "default"}
+              className="h-[52px] w-full gap-2 rounded-[14px] text-base font-bold"
+              onClick={onCreateRequest}
+              disabled={report.expenseCount === 0 || creatingRequest || hasAppliedAdjustments}
+            >
+              <CircleCheck className="h-5 w-5" strokeWidth={2.4} />
+              {creatingRequest ? "확정 중..." : hasAppliedAdjustments ? "정산 내역 공유하기" : "이 내용으로 확정하기"}
+            </Button>
+          </div>
         </div>
-        <p className="text-xs leading-relaxed text-on-surface-variant">
-          *결과 = 결제 금액 - 부담 금액 (양수는 받을 금액, 음수는 보낼 금액)
-        </p>
       </section>
 
-      <section className="space-y-3">
-        <div>
-          <h3 className="text-base font-bold text-on-surface">추가 조정 항목</h3>
-          <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
-            기본 정산 외에 따로 주고받아야 할 금액을 추가할 수 있어요.
-          </p>
-        </div>
-        {adjustmentPermissionBlocked ? (
-          <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
-            로컬 Firestore emulator가 최신 rules를 반영하지 않아 추가 조정 항목을 저장할 수 없어요.
-            emulator를 재시작하거나 운영 rules를 배포한 뒤 다시 시도해 주세요.
+      <section className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+          onClick={() => setDetailsExpanded((expanded) => !expanded)}
+        >
+          <div>
+            <h3 className="text-base font-bold text-on-surface">🧾 정산 상세</h3>
+            <p className="mt-0.5 text-xs text-on-surface-variant">결제 요약과 멤버별 부담 결과를 확인할 수 있어요.</p>
+          </div>
+          <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+            {detailsExpanded ? "expand_less" : "expand_more"}
+          </span>
+        </button>
+        {detailsExpanded ? (
+          <div className="space-y-4 border-t border-outline-variant/60 p-3">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-bold text-on-surface">결제자별 지출</h4>
+                <span className="text-[11px] font-semibold text-on-surface-variant">단위: ₩</span>
+              </div>
+              <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+                <div className="grid grid-cols-[0.85fr_0.95fr_1.2fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
+                  <span>멤버</span>
+                  <span className="text-right">지출 건수</span>
+                  <span className="text-right">미확정(가환율)</span>
+                  <span className="text-right">결제 금액</span>
+                </div>
+                {payerRows.map((row) => (
+                  <div key={row.uid} className="grid grid-cols-[0.85fr_0.95fr_1.2fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
+                    <span className="truncate font-semibold text-on-surface">{row.name}</span>
+                    <span className="text-right tabular-nums text-on-surface-variant">{row.expenseCount}건</span>
+                    <span className={`text-right tabular-nums font-semibold ${row.estimatedCount > 0 ? "text-rose-600" : "text-on-surface-variant"}`}>
+                      {row.estimatedCount}건
+                    </span>
+                    <span className="text-right tabular-nums text-on-surface-variant">{formatKrwValue(row.paidTotal)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <h4 className="text-sm font-bold text-on-surface">기본 정산 결과</h4>
+                <span className="text-[11px] font-semibold text-on-surface-variant">단위: ₩</span>
+              </div>
+              <p className="text-xs leading-relaxed text-on-surface-variant">
+                결제한 금액에서 본인이 부담해야 할 금액을 뺀 결과예요.
+              </p>
+              <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+                <div className="grid grid-cols-[0.85fr_0.95fr_1.2fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
+                  <span>멤버</span>
+                  <span className="text-right">결제 금액</span>
+                  <span className="text-right">부담 금액</span>
+                  <span className="text-right">결과</span>
+                </div>
+                {report.memberRows.map((row) => (
+                  <div key={row.uid} className="grid grid-cols-[0.85fr_0.95fr_1.2fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
+                    <span className="truncate font-semibold text-on-surface">{row.name}</span>
+                    <span className="text-right tabular-nums text-on-surface-variant">{formatKrwValue(row.paidTotal)}</span>
+                    <span className="text-right tabular-nums text-on-surface-variant">{formatKrwValue(row.shareTotal)}</span>
+                    <span className={`text-right tabular-nums font-bold ${row.balance >= 0 ? "text-primary" : "text-rose-600"}`}>
+                      {formatSignedKrwValue(row.balance)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-on-surface">
+                    {hasActiveAdjustments ? `별도 조정 ${activeAdjustments.length}건` : "별도 조정"}
+                  </h4>
+                  {!hasActiveAdjustments ? (
+                    <p className="mt-1 hidden text-xs leading-relaxed text-on-surface-variant sm:block">
+                      현금 보정, 개인 간 별도 송금 등 기본 정산 외 금액을 반영할 수 있어요.
+                    </p>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="h-8 shrink-0 gap-1 rounded-lg px-2.5 text-xs font-bold"
+                  onClick={() => setShowAdjustmentForm(true)}
+                  disabled={adjustmentSaving || adjustmentPermissionBlocked}
+                  aria-label="별도 조정 추가"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  추가
+                </Button>
+              </div>
+              {adjustmentPermissionBlocked ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-800">
+                  로컬 Firestore emulator가 최신 rules를 반영하지 않아 추가 조정 항목을 저장할 수 없어요.
+                  emulator를 재시작하거나 운영 rules를 배포한 뒤 다시 시도해 주세요.
+                </div>
+              ) : null}
+              {hasActiveAdjustments ? (
+                <div className="space-y-1.5">
+                  {activeAdjustments.map((offset) => (
+                    <div key={offset.id} className="relative rounded-lg bg-surface-container px-3 py-2">
+                      <div className="grid grid-cols-[minmax(0,1fr)_auto_36px] items-center gap-2">
+                        <p className="min-w-0 truncate text-sm font-semibold text-on-surface">
+                          {memberNameByUid.get(offset.fromUid) ?? "이름 없음"}
+                          <span className="mx-1.5 text-on-surface-variant">→</span>
+                          {memberNameByUid.get(offset.toUid) ?? "이름 없음"}
+                        </p>
+                        <p className="shrink-0 text-right text-sm font-bold tabular-nums text-primary">{formatKrw(offset.amount)}</p>
+                        <div
+                          className="relative flex h-8 w-9 items-center justify-end"
+                          onBlur={(event) => {
+                            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+                              setAdjustmentMenuOpenId((openId) => (openId === offset.id ? null : openId));
+                            }
+                          }}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => setAdjustmentMenuOpenId((openId) => (openId === offset.id ? null : offset.id))}
+                            disabled={adjustmentSaving || adjustmentPermissionBlocked}
+                            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-white/80 disabled:cursor-not-allowed disabled:opacity-40"
+                            aria-label="별도 조정 메뉴"
+                            aria-expanded={adjustmentMenuOpenId === offset.id}
+                          >
+                            <MoreHorizontal className="h-4 w-4" />
+                          </button>
+                          {adjustmentMenuOpenId === offset.id ? (
+                            <div className="absolute right-0 top-9 z-20 w-28 overflow-hidden rounded-xl border border-outline-variant bg-white py-1 shadow-lg shadow-black/10">
+                              <button
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => startEditOffset(offset)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-on-surface hover:bg-surface-container"
+                              >
+                                <Edit2 className="h-4 w-4" />
+                                수정
+                              </button>
+                              <button
+                                type="button"
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => voidOffset(offset.id)}
+                                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-semibold text-rose-600 hover:bg-rose-50"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                                삭제
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                      {offset.memo ? (
+                        <p className="mt-0.5 truncate pr-24 text-xs text-on-surface-variant">{offset.memo}</p>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed border-outline-variant/70 bg-white/60 px-3 py-2.5 text-sm text-on-surface-variant">
+                  아직 추가된 조정이 없어요.
+                </p>
+              )}
+            </div>
+
+            {(hasActiveAdjustments || hasFinalBalanceDifference) ? (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between gap-3">
+                  <h4 className="text-sm font-bold text-on-surface">멤버별 최종 금액</h4>
+                  <span className="text-[11px] font-semibold text-on-surface-variant">단위: ₩</span>
+                </div>
+                <p className="text-xs leading-relaxed text-on-surface-variant">
+                  +는 받을 금액, -는 보낼 금액이에요.
+                </p>
+                <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
+                  <div className="grid grid-cols-[0.85fr_0.95fr_1.2fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
+                    <span>멤버</span>
+                    <span className="text-right">기본 정산</span>
+                    <span className="text-right">별도 조정</span>
+                    <span className="text-right">최종 결과</span>
+                  </div>
+                  {adjustedRows.map((row) => (
+                    <div key={row.uid} className="grid grid-cols-[0.85fr_0.95fr_1.2fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
+                      <span className="truncate font-semibold text-on-surface">{row.name}</span>
+                      <span className={`text-right tabular-nums font-medium ${row.balance >= 0 ? "text-primary" : "text-rose-600"}`}>
+                        {formatSignedKrwValue(row.balance)}
+                      </span>
+                      <span className={`text-right tabular-nums font-medium ${row.offsetDelta >= 0 ? "text-primary" : "text-rose-600"}`}>
+                        {formatSignedKrwValue(row.offsetDelta)}
+                      </span>
+                      <span className={`text-right tabular-nums font-bold ${row.finalBalance >= 0 ? "text-primary" : "text-rose-600"}`}>
+                        {formatSignedKrwValue(row.finalBalance)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : null}
-        <div className="rounded-xl border border-outline-variant/60 bg-white/75 p-3">
-          <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_1.2fr_auto]">
-            <label className="space-y-1">
-              <span className="text-[11px] font-semibold text-on-surface-variant">보내는 사람</span>
+      </section>
+
+      <Dialog
+        open={showAdjustmentForm}
+        onOpenChange={(open) => {
+          if (open) {
+            setShowAdjustmentForm(true);
+          } else {
+            cancelAddOffset();
+          }
+        }}
+      >
+        <DialogContent className="max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>별도 조정 추가</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">보내는 사람</span>
               <select
                 value={offsetFromUid}
                 onChange={(e) => setOffsetFromUid(e.target.value)}
-                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
               >
                 <option value="">선택</option>
                 {memberRows.map((row) => (
@@ -2350,12 +2596,12 @@ function ProductionSettlementStatusView({
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
-              <span className="text-[11px] font-semibold text-on-surface-variant">받는 사람</span>
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">받는 사람</span>
               <select
                 value={offsetToUid}
                 onChange={(e) => setOffsetToUid(e.target.value)}
-                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
               >
                 <option value="">선택</option>
                 {memberRows.map((row) => (
@@ -2363,227 +2609,129 @@ function ProductionSettlementStatusView({
                 ))}
               </select>
             </label>
-            <label className="space-y-1">
-              <span className="text-[11px] font-semibold text-on-surface-variant">금액</span>
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">금액</span>
               <input
-                type="number"
-                min="1"
+                type="text"
                 inputMode="numeric"
                 value={offsetAmount}
-                onChange={(e) => setOffsetAmount(e.target.value)}
-                placeholder="50000"
-                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
+                onChange={(e) => setOffsetAmount(e.target.value.replace(/[^\d]/g, ""))}
+                placeholder="₩50,000"
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
               />
             </label>
-            <label className="space-y-1">
-              <span className="text-[11px] font-semibold text-on-surface-variant">메모</span>
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">메모</span>
               <input
                 type="text"
                 value={offsetMemo}
                 onChange={(e) => setOffsetMemo(e.target.value)}
                 placeholder="현금 보정"
-                className="h-10 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
               />
             </label>
+          </div>
+          <div className="mt-2 flex gap-2">
             <Button
               type="button"
-              className="h-10 self-end"
+              variant="outline"
+              className="flex-1"
+              onClick={cancelAddOffset}
+              disabled={adjustmentSaving}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
               onClick={addOffset}
               disabled={adjustmentSaving || adjustmentPermissionBlocked}
             >
-              추가
+              반영하기
             </Button>
           </div>
-          <div className="mt-3 space-y-2">
-            {adjustments.length > 0 ? (
-              adjustments.map((offset) => {
-                const isEditing = editingAdjustmentId === offset.id;
-                const isApplied = offset.status === "applied";
-                return (
-                  <div key={offset.id} className="rounded-lg bg-surface-container px-3 py-2">
-                    {isEditing ? (
-                      <div className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_1.2fr_auto_auto]">
-                        <select
-                          value={editFromUid}
-                          onChange={(e) => setEditFromUid(e.target.value)}
-                          className="h-9 rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
-                        >
-                          {memberRows.map((row) => (
-                            <option key={row.uid} value={row.uid}>{row.name}</option>
-                          ))}
-                        </select>
-                        <select
-                          value={editToUid}
-                          onChange={(e) => setEditToUid(e.target.value)}
-                          className="h-9 rounded-lg border border-outline-variant bg-white px-2 text-sm text-on-surface"
-                        >
-                          {memberRows.map((row) => (
-                            <option key={row.uid} value={row.uid}>{row.name}</option>
-                          ))}
-                        </select>
-                        <input
-                          type="number"
-                          min="1"
-                          inputMode="numeric"
-                          value={editAmount}
-                          onChange={(e) => setEditAmount(e.target.value)}
-                          className="h-9 rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
-                        />
-                        <input
-                          type="text"
-                          value={editMemo}
-                          onChange={(e) => setEditMemo(e.target.value)}
-                          className="h-9 rounded-lg border border-outline-variant bg-white px-3 text-sm text-on-surface"
-                        />
-                        <Button
-                          type="button"
-                          size="sm"
-                          onClick={() => saveOffsetEdit(offset.id)}
-                          disabled={adjustmentSaving || adjustmentPermissionBlocked}
-                        >
-                          저장
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="outline"
-                          onClick={cancelEditOffset}
-                          disabled={adjustmentSaving}
-                        >
-                          취소
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="flex min-w-0 flex-wrap items-center gap-2">
-                            <p className="min-w-0 truncate text-sm font-semibold text-on-surface">
-                              {memberNameByUid.get(offset.fromUid) ?? "이름 없음"}
-                              <span className="mx-1.5 text-on-surface-variant">→</span>
-                              {memberNameByUid.get(offset.toUid) ?? "이름 없음"}
-                            </p>
-                            {isApplied ? (
-                              <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-bold text-primary">
-                                정산 반영됨
-                              </span>
-                            ) : null}
-                          </div>
-                          {offset.memo ? (
-                            <p className="mt-0.5 truncate text-xs text-on-surface-variant">{offset.memo}</p>
-                          ) : null}
-                        </div>
-                        <div className="flex shrink-0 items-center gap-2">
-                          <p className="text-sm font-bold text-primary">{formatKrw(offset.amount)}</p>
-                          <button
-                            type="button"
-                            onClick={() => startEditOffset(offset)}
-                            disabled={adjustmentSaving || isApplied || adjustmentPermissionBlocked}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-outline-variant/30 disabled:cursor-not-allowed disabled:opacity-40"
-                            aria-label="추가 조정 항목 수정"
-                          >
-                            <Edit2 className="h-4 w-4" />
-                          </button>
-                          <button
-                            type="button"
-                            aria-label="추가 조정 항목 삭제"
-                            onClick={() => voidOffset(offset.id)}
-                            disabled={adjustmentSaving || isApplied || adjustmentPermissionBlocked}
-                            className="flex h-7 w-7 items-center justify-center rounded-full text-on-surface-variant hover:bg-outline-variant/30 disabled:cursor-not-allowed disabled:opacity-40"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })
-            ) : (
-              <p className="text-sm text-on-surface-variant">추가된 조정 항목이 없어요.</p>
-            )}
-          </div>
-        </div>
-      </section>
+        </DialogContent>
+      </Dialog>
 
-      <section className="space-y-3">
-        <h3 className="text-base font-bold text-on-surface">🧾 최종 정산 결과</h3>
-        <div className="overflow-hidden rounded-xl border border-outline-variant/60 bg-white/75">
-          <div className="grid grid-cols-[1fr_1fr_1fr_1fr] border-b border-outline-variant/60 bg-surface-container px-3 py-2 text-[11px] font-semibold text-on-surface-variant">
-            <span>멤버</span>
-            <span className="text-right">기본 정산</span>
-            <span className="text-right">추가 조정</span>
-            <span className="text-right">최종 결과</span>
-          </div>
-          {adjustedRows.map((row) => (
-            <div key={row.uid} className="grid grid-cols-[1fr_1fr_1fr_1fr] border-b border-outline-variant/50 px-3 py-2 text-xs last:border-b-0">
-              <span className="truncate font-semibold text-on-surface">{row.name}</span>
-              <span className={`text-right font-medium ${row.balance >= 0 ? "text-primary" : "text-rose-600"}`}>
-                {formatSignedKrw(row.balance)}
-              </span>
-              <span className={`text-right font-medium ${row.offsetDelta >= 0 ? "text-primary" : "text-rose-600"}`}>
-                {formatSignedKrw(row.offsetDelta)}
-              </span>
-              <span className={`text-right font-bold ${row.finalBalance >= 0 ? "text-primary" : "text-rose-600"}`}>
-                {formatSignedKrw(row.finalBalance)}
-              </span>
-            </div>
-          ))}
-        </div>
-
-        <h4 className="text-sm font-bold text-on-surface">💸 송금해야 할 금액</h4>
-        {finalTransfers.length > 0 ? (
-          <div className="space-y-2">
-            {finalTransfers.map((transfer, idx) => (
-              <article
-                key={`${transfer.fromUid}-${transfer.toUid}-${idx}`}
-                className="rounded-xl border border-outline-variant/60 bg-white/75 p-3"
+      <Dialog
+        open={editingAdjustmentId !== null}
+        onOpenChange={(open) => {
+          if (!open) cancelEditOffset();
+        }}
+      >
+        <DialogContent className="max-w-[420px]">
+          <DialogHeader>
+            <DialogTitle>별도 조정 수정</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">보내는 사람</span>
+              <select
+                value={editFromUid}
+                onChange={(e) => setEditFromUid(e.target.value)}
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
               >
-                <div className="flex items-center justify-between gap-3">
-                  <p className="min-w-0 truncate text-sm font-semibold text-on-surface">
-                    {transfer.fromName}
-                    <span className="mx-1.5 text-on-surface-variant">→</span>
-                    {transfer.toName}
-                  </p>
-                  <div className="flex shrink-0 items-center gap-2">
-                    {hasAppliedAdjustments ? (
-                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-700">
-                        송금 전
-                      </span>
-                    ) : null}
-                    <p className="text-sm font-extrabold text-primary">{formatKrw(transfer.amount)}</p>
-                  </div>
-                </div>
-                {hasAppliedAdjustments ? (
-                  <div className="mt-3 flex justify-end gap-2">
-                    <Button type="button" size="sm" variant="outline" disabled>
-                      보냈어요
-                    </Button>
-                    <Button type="button" size="sm" variant="outline" disabled>
-                      받았어요
-                    </Button>
-                  </div>
-                ) : null}
-              </article>
-            ))}
+                {memberRows.map((row) => (
+                  <option key={row.uid} value={row.uid}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">받는 사람</span>
+              <select
+                value={editToUid}
+                onChange={(e) => setEditToUid(e.target.value)}
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
+              >
+                {memberRows.map((row) => (
+                  <option key={row.uid} value={row.uid}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">금액</span>
+              <input
+                type="text"
+                inputMode="numeric"
+                value={editAmount}
+                onChange={(e) => setEditAmount(e.target.value.replace(/[^\d]/g, ""))}
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
+              />
+            </label>
+            <label className="space-y-1.5">
+              <span className="text-xs font-semibold text-on-surface-variant">메모</span>
+              <input
+                type="text"
+                value={editMemo}
+                onChange={(e) => setEditMemo(e.target.value)}
+                className="h-11 w-full rounded-lg border border-outline-variant bg-white px-3 text-sm font-medium text-on-surface"
+              />
+            </label>
           </div>
-        ) : (
-          <div className="rounded-xl border border-outline-variant/60 bg-white/70 p-4 text-sm text-on-surface-variant">
-            최종 송금할 금액이 없어요.
+          <div className="mt-2 flex gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              className="flex-1"
+              onClick={cancelEditOffset}
+              disabled={adjustmentSaving}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              className="flex-1"
+              onClick={() => {
+                if (editingAdjustmentId) void saveOffsetEdit(editingAdjustmentId);
+              }}
+              disabled={adjustmentSaving || adjustmentPermissionBlocked || editingAdjustmentId === null}
+            >
+              저장
+            </Button>
           </div>
-        )}
-      </section>
+        </DialogContent>
+      </Dialog>
 
-      <section className="space-y-3 rounded-xl border border-outline-variant/60 bg-white/75 p-4">
-        <div>
-          <h3 className="text-base font-bold text-on-surface">정산 요청</h3>
-          <p className="mt-1 text-xs leading-relaxed text-on-surface-variant">
-            송금해야 할 금액을 확인한 뒤 정산 요청을 만들거나 기존 요청 상태를 확인합니다.
-          </p>
-        </div>
-        <Button type="button" className="w-full" onClick={onCreateRequest} disabled={report.expenseCount === 0 || creatingRequest}>
-          {creatingRequest ? "생성 중..." : "정산 요청 생성"}
-        </Button>
-      </section>
     </div>
   );
 }
@@ -2790,10 +2938,11 @@ function SettlementRequestList({
   onOpenRequest: (requestId: string) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState<SettlementRequestFilter>("all");
+  const nonCancelledRequests = requests.filter((request) => request.status !== "cancelled");
   const visibleRequests =
     statusFilter === "all"
-      ? requests
-      : requests.filter((request) => request.status === statusFilter);
+      ? nonCancelledRequests
+      : nonCancelledRequests.filter((request) => request.status === statusFilter);
 
   return (
     <section className="space-y-3">
